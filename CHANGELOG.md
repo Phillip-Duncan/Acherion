@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.2.1 (2026-05-09)
+
+### Bug Fixes
+
+- Improve package presentation branding
+  ([`efbe0b7`](https://github.com/Phillip-Duncan/Acherion/commit/efbe0b7281526a589e4dab9731ca71f454e734aa))
+
+
 ## v0.2.0 (2026-05-09)
 
 ### Features
