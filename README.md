@@ -190,6 +190,41 @@ Repository documentation is split into focused guides:
 - `docs/extending.md` for catalogs, validation, preview, and node extension hooks
 - `docs/releasing.md` for local packaging checks and GitHub/PyPI release flow
 
+## Contributing
+
+Contributions are welcome, especially changes that improve the public runtime API,
+embedded workbench behavior, packaging flow, and documentation.
+
+For local development:
+
+```bash
+pip install -e ".[dev]"
+python -m pytest
+python -m build --sdist --wheel
+python -m twine check dist/*
+```
+
+When adding regression coverage, prefer behavior-focused tests over brittle UI
+snapshots. The most useful tests in this repository usually validate:
+
+- public API behavior
+- graph compile and execution paths
+- theme override normalization and generated CSS contracts
+- extension and registration hooks
+
+This repository uses conventional commits and semantic versioning. Pull request
+titles and merge commits should follow the same convention, for example:
+
+- `feat: add preview regression coverage`
+- `fix: preserve theme override aliases`
+- `docs: clarify embedded host setup`
+
+In general:
+
+- use `feat:` for user-visible capabilities or meaningful public API expansion
+- use `fix:` or `perf:` for patch-level runtime changes
+- add or update focused regression tests when changing behavior that users rely on
+
 ## Packaging and release
 
 Build distributions locally with:
