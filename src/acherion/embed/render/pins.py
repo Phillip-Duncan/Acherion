@@ -214,23 +214,49 @@ class _RenderPinsMixin:
             return None
         return raw_literals.get(pin_id)
 
+    @staticmethod
+    def _coerce_pin_literal_value(
+        value: Any,
+        *,
+        input_kind: str,
+        pin_type: str,
+    ) -> Any:
+        """Normalize one literal input value using the pin's declared type."""
+        if input_kind != 'number':
+            return str(value)
+        if pin_type == 'int':
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return None
+        if pin_type == 'float':
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+        return value
+
     def _set_pin_literal_value(
         self: Any,
         node: AcherionNode,
         *,
         pin_id: str,
         input_kind: str,
+        pin_type: str,
         value: Any,
         notify: bool = True,
     ) -> None:
         """Persist one literal fallback value for an input pin."""
         literals = dict(node.params.get('pin_literals') or {})
-        if value in (None, ''):
+        coerced_value = self._coerce_pin_literal_value(
+            value,
+            input_kind=input_kind,
+            pin_type=pin_type,
+        )
+        if coerced_value in (None, ''):
             literals.pop(pin_id, None)
-        elif input_kind == 'number':
-            literals[pin_id] = value
         else:
-            literals[pin_id] = str(value)
+            literals[pin_id] = coerced_value
         node.params['pin_literals'] = literals
         if notify:
             self._notify_change()
@@ -262,11 +288,13 @@ class _RenderPinsMixin:
             ).classes(field_classes)
             number_field.on(
                 'update:model-value',
-                lambda event, cur=node, pid=pin_id, kind=input_kind: (
+                lambda event, cur=node, pid=pin_id, kind=input_kind,
+                ptype=pin_type: (
                     self._set_pin_literal_value(
                         cur,
                         pin_id=pid,
                         input_kind=kind,
+                        pin_type=ptype,
                         value=getattr(event, 'args', None),
                         notify=False,
                     )
@@ -275,11 +303,13 @@ class _RenderPinsMixin:
             number_field.on(
                 'blur',
                 lambda _event, cur=node, pid=pin_id, kind=input_kind,
+                ptype=pin_type,
                 field=number_field: (
                     self._set_pin_literal_value(
                         cur,
                         pin_id=pid,
                         input_kind=kind,
+                        pin_type=ptype,
                         value=field.value,
                     )
                 ),
@@ -287,11 +317,13 @@ class _RenderPinsMixin:
             number_field.on(
                 'keydown.enter',
                 lambda _event, cur=node, pid=pin_id, kind=input_kind,
+                ptype=pin_type,
                 field=number_field: (
                     self._set_pin_literal_value(
                         cur,
                         pin_id=pid,
                         input_kind=kind,
+                        pin_type=ptype,
                         value=field.value,
                     )
                 ),
@@ -305,11 +337,13 @@ class _RenderPinsMixin:
         )
         text_field.on(
             'update:model-value',
-            lambda event, cur=node, pid=pin_id, kind=input_kind: (
+            lambda event, cur=node, pid=pin_id, kind=input_kind,
+            ptype=pin_type: (
                 self._set_pin_literal_value(
                     cur,
                     pin_id=pid,
                     input_kind=kind,
+                    pin_type=ptype,
                     value=getattr(event, 'args', None),
                     notify=False,
                 )
@@ -318,11 +352,13 @@ class _RenderPinsMixin:
         text_field.on(
             'blur',
             lambda _event, cur=node, pid=pin_id, kind=input_kind,
+            ptype=pin_type,
             field=text_field: (
                 self._set_pin_literal_value(
                     cur,
                     pin_id=pid,
                     input_kind=kind,
+                    pin_type=ptype,
                     value=field.value,
                 )
             ),
@@ -330,11 +366,13 @@ class _RenderPinsMixin:
         text_field.on(
             'keydown.enter',
             lambda _event, cur=node, pid=pin_id, kind=input_kind,
+            ptype=pin_type,
             field=text_field: (
                 self._set_pin_literal_value(
                     cur,
                     pin_id=pid,
                     input_kind=kind,
+                    pin_type=ptype,
                     value=field.value,
                 )
             ),

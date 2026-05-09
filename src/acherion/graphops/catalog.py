@@ -19,6 +19,9 @@ from acherion.validation import (
 )
 
 
+_CUSTOM_FUNCTION_AUTO_NAME_RE = re.compile(r'^user\.custom_function_(\d+)$')
+
+
 class _InstancePathOwner(Protocol):
     def _node_by_id(self, node_id: str) -> AcherionNode | None:
         ...
@@ -45,6 +48,19 @@ class _InstancePathOwner(Protocol):
 
 class _GraphOpsCatalogMixin:
     """Catalog lookup and editor mutation helpers."""
+
+    def _next_custom_function_name(self: Any) -> str:
+        """Return the next stable auto-name for a new custom function node."""
+        used_numbers: set[int] = set()
+        for path in (self._graph.user_functions or {}):
+            match = _CUSTOM_FUNCTION_AUTO_NAME_RE.match(str(path or '').strip())
+            if match is None:
+                continue
+            used_numbers.add(int(match.group(1)))
+        next_number = 1
+        while next_number in used_numbers:
+            next_number += 1
+        return f'custom_function_{next_number}'
 
     def _function_entry(self: Any, path: str) -> Any:
         """Return graph-local or built-in function catalog entry."""
@@ -115,7 +131,7 @@ class _GraphOpsCatalogMixin:
     def _default_custom_function_source(function_name: str) -> str:
         """Return starter source for one custom function node."""
         return (
-            f'def {function_name}(self):\n'
+            f'def {function_name}():\n'
             '    return None\n'
         )
 
@@ -173,21 +189,17 @@ class _GraphOpsCatalogMixin:
             return (None, 'Custom function nodes do not support **kwargs.')
 
         positional_args = list(function_def.args.args)
-        if not positional_args or positional_args[0].arg != 'self':
-            return (
-                None,
-                'Custom function must start with def name(self, ...).',
-            )
-
-        param_args = positional_args[1:]
         defaults = list(function_def.args.defaults)
-        default_start_index = len(positional_args) - len(defaults)
-        signature_parts = ['self']
+        default_values: list[ast.AST | None] = [
+            *([None] * (len(positional_args) - len(defaults))),
+            *defaults,
+        ]
+        has_legacy_self = bool(positional_args and positional_args[0].arg == 'self')
+        param_args = positional_args[1:] if has_legacy_self else positional_args
+        param_defaults = default_values[1:] if has_legacy_self else default_values
+        signature_parts: list[str] = []
         param_types: list[str] = []
-        for index, argument in enumerate(param_args, start=1):
-            default_value = None
-            if index >= default_start_index:
-                default_value = defaults[index - default_start_index]
+        for argument, default_value in zip(param_args, param_defaults):
             signature_parts.append(
                 self._format_custom_function_arg(argument, default_value)
             )
@@ -221,7 +233,7 @@ class _GraphOpsCatalogMixin:
         if return_annotation:
             signature = f'{signature} -> {return_annotation}'
 
-        min_args = max(0, len(param_args) - len(defaults))
+        min_args = sum(1 for default_value in param_defaults if default_value is None)
         data = {
             'label': function_def.name,
             'signature': signature,
@@ -273,10 +285,7 @@ class _GraphOpsCatalogMixin:
             return
         current_path = str(node.params.get('function_path') or '').strip()
         if not current_path.startswith('user.'):
-            function_name = self._sanitize_identifier(
-                str(node.title or ''),
-                f'custom_function_{node.node_id}',
-            )
+            function_name = self._next_custom_function_name()
             current_path = f'user.{function_name}'
             node.params['function_path'] = current_path
         node.params['module'] = 'user'

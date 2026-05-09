@@ -502,9 +502,8 @@ def _emit_plot_figure_node(
         kw_parts.append(f'gauge=dict(axis=dict(range=[{low}, {high}]))')
     kw_str = ', '.join(kw_parts)
     state.lines.extend([
-        f'{indent}import plotly.graph_objects as _go',
-        f'{indent}{var_name} = _go.Figure('
-        f'data=[{trace_entry.go_class.replace("go.", "_go.")}({kw_str})])',
+        f'{indent}{var_name} = go.Figure('
+        f'data=[{trace_entry.go_class}({kw_str})])',
     ])
     if figure_title:
         state.lines.append(

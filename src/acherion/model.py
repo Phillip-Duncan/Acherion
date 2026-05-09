@@ -139,7 +139,8 @@ def _node_var_name(index: int, node: AcherionNode) -> str:
     if identifier is not None:
         return identifier
     if str(node.title or '').strip():
-        return acherion_auto_identifier(node.title, node.kind)
+        base_name = acherion_auto_identifier(node.title, node.kind)
+        return f'{base_name}_{index + 1}'
     return f'node_{index + 1}_{node.kind}'
 
 

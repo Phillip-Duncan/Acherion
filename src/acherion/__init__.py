@@ -45,6 +45,7 @@ from acherion.preview import (
 )
 from acherion.theme import (
     AcherionThemeOverrides,
+    acherion_plotly_template_payload,
     acherion_ui_colors,
     build_acherion_theme_override_css,
     build_embedded_acherion_theme_css,
@@ -101,6 +102,7 @@ __all__ = [
     'CatalogModuleSpec',
     'CatalogScanSpec',
     'CompositeNodeDefinition',
+    'acherion_plotly_template_payload',
     'acherion_ui_colors',
     'compile_acherion_graph',
     'compose_acherion_host',

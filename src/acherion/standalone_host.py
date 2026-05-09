@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from acherion.catalog import modules as _catalog_modules
 from acherion.compiler.orchestration import (
     _GraphEventCompilerBase,
     _GraphNodeEmitterBase,
@@ -242,6 +243,7 @@ def load_acherion_graph_namespace(source_code: str) -> dict[str, Any]:
     namespace: dict[str, Any] = {
         '__builtins__': __builtins__,
         '__name__': '_acherion_standalone_runtime',
+        **_catalog_modules.runtime_global_bindings(),
     }
     exec(source_code, namespace)  # pylint: disable=exec-used
     return namespace

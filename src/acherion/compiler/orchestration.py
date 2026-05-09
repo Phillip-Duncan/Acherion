@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from typing import Any
 
 from acherion.compiler.emit_nodes import (
@@ -19,6 +20,34 @@ from acherion.events import (
     acherion_event_handler_name,
 )
 from acherion.model import AcherionGraph, AcherionNode, _system_node_id
+
+
+def _runtime_user_function_source(source_code: str) -> str:
+    """Adapt stored custom-function source for standalone runtime execution."""
+    normalized_source = str(source_code or '').strip('\n')
+    if not normalized_source.strip():
+        return ''
+    runtime_source = normalized_source.rstrip() + '\n'
+    try:
+        module = ast.parse(runtime_source)
+    except SyntaxError:
+        return runtime_source.rstrip('\n')
+    if len(module.body) != 1 or not isinstance(module.body[0], ast.FunctionDef):
+        return runtime_source.rstrip('\n')
+    function_def = module.body[0]
+    positional_args = list(function_def.args.args)
+    if not positional_args or positional_args[0].arg != 'self':
+        return runtime_source.rstrip('\n')
+    function_name = str(function_def.name or '').strip()
+    if not function_name:
+        return runtime_source.rstrip('\n')
+    impl_name = f'_{function_name}_acherion_impl'
+    wrapper_lines = [
+        f'{impl_name} = {function_name}',
+        f'def {function_name}(*args, __acherion_fn={impl_name}):',
+        "    return __acherion_fn(globals().get('self'), *args)",
+    ]
+    return runtime_source.rstrip('\n') + '\n\n' + '\n'.join(wrapper_lines)
 
 
 class _GraphNodeEmitterBase:
@@ -160,7 +189,9 @@ class _GraphRunCompilerBase:
     def _append_user_functions(self) -> None:
         for path in sorted(self._graph.user_functions):
             data = self._graph.user_functions.get(path) or {}
-            source_code = str(data.get('source_code') or '').strip('\n')
+            source_code = _runtime_user_function_source(
+                str(data.get('source_code') or '')
+            )
             if not source_code:
                 continue
             self._state.lines.extend(source_code.splitlines())

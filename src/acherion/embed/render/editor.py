@@ -21,6 +21,7 @@ from acherion.model import (
     _template_title,
 )
 from acherion.preview import (
+    preview_value_plotly_payload,
     preview_value_summary,
     preview_value_type_tag,
 )
@@ -282,7 +283,7 @@ class _RenderEditorMixin:
             ):
                 ui.label('Custom Function').classes('text-base font-bold oe-text')
                 ui.label(
-                    'Define exactly one method like def my_func(self, value):'
+                    'Define exactly one function like def my_func(value):'
                 ).classes('text-xs oe-muted')
                 ui.label(
                     'Optional positional params become input pins. Return value '
@@ -496,6 +497,22 @@ class _RenderEditorMixin:
             return ''
         return f'Preview: {preview_value_summary(value)}'
 
+    def _render_preview_visual(
+        self: Any,
+        value: Any,
+        *,
+        compact: bool,
+    ) -> bool:
+        """Render one visual preview when the runtime value supports it."""
+        plotly_payload = preview_value_plotly_payload(value)
+        if plotly_payload is None:
+            return False
+        height = '180px' if compact else '260px'
+        ui.plotly(plotly_payload).classes('w-full ach-node-preview-plot').style(
+            f'height:{height};'
+        )
+        return True
+
     def _render_node_preview_card(self: Any, node: AcherionNode) -> None:
         """Render one result-only preview block under a node body."""
         value = self._node_preview_result_value(node)
@@ -503,9 +520,10 @@ class _RenderEditorMixin:
             return
         with ui.column().classes('ach-node-preview'):
             ui.label('Preview').classes('ach-node-preview-title')
-            ui.label(
-                preview_value_summary(value)
-            ).classes('ach-node-preview-value')
+            if not self._render_preview_visual(value, compact=True):
+                ui.label(
+                    preview_value_summary(value)
+                ).classes('ach-node-preview-value')
 
     def _set_preview_literal_value(
         self: Any,
@@ -672,9 +690,14 @@ class _RenderEditorMixin:
                 ).classes('text-xs oe-muted font-mono')
 
         if preview_value is not None:
-            ui.label(
-                self._node_preview_summary(node)
-            ).classes('text-xs oe-text font-mono')
+            if self._render_preview_visual(preview_value, compact=False):
+                ui.label(
+                    self._node_preview_summary(node)
+                ).classes('text-xs oe-muted font-mono')
+            else:
+                ui.label(
+                    self._node_preview_summary(node)
+                ).classes('text-xs oe-text font-mono')
         else:
             ui.label(
                 'Run Preview to inspect the current runtime value for this node.'

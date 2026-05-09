@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 
+from acherion.catalog import modules as _catalog_modules
 from acherion.catalog import types as _catalog_types
 from acherion.code_validation import (
     CodeValidationSupport,
@@ -75,6 +76,7 @@ def register_acherion_validation_extension(
 def _validation_runtime_globals() -> dict[str, Any]:
     """Return merged runtime globals for custom-function validation."""
     runtime_globals = dict(_BASE_RUNTIME_GLOBALS)
+    runtime_globals.update(_catalog_modules.runtime_global_bindings())
     for extension in _REGISTERED_VALIDATION_EXTENSIONS.values():
         for name, loader in extension.runtime_global_loaders.items():
             loaded = loader()
@@ -369,13 +371,20 @@ def _infer_return_type_from_body(function_def: ast.FunctionDef) -> str:
     """Infer return type from simple return expressions in the function body."""
     discovered_types: set[str] = set()
     saw_return = False
+    saw_non_none_return = False
     for node in _walk_returns(function_def):
         saw_return = True
+        if node.value is not None and not (
+            isinstance(node.value, ast.Constant) and node.value.value is None
+        ):
+            saw_non_none_return = True
         inferred_type = _infer_ast_return_expr_type(node.value)
         if inferred_type not in {'', 'any'}:
             discovered_types.add(inferred_type)
     if len(discovered_types) == 1:
         return next(iter(discovered_types))
+    if saw_non_none_return and not discovered_types:
+        return 'any'
     if saw_return and not discovered_types:
         return ''
     if not saw_return:

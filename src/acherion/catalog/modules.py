@@ -145,6 +145,8 @@ _COLLECTIONS_TYPE_ALLOWLIST: frozenset[str] = frozenset({
 
 _PATHLIB_TYPE_ALLOWLIST: frozenset[str] = frozenset({'Path'})
 
+_NUMPY_TYPE_ALLOWLIST: frozenset[str] = frozenset({'ndarray'})
+
 _BASE_CATALOG_MODULE_SPECS: tuple[CatalogModuleSpec, ...] = (
     CatalogModuleSpec(
         key='builtins',
@@ -194,6 +196,43 @@ _BASE_CATALOG_MODULE_SPECS: tuple[CatalogModuleSpec, ...] = (
         object_module_roots=('pathlib',),
         gate_types_with_allowlist=True,
     ),
+    CatalogModuleSpec(
+        key='np',
+        label='numpy (np)',
+        import_path='numpy',
+        scans=(CatalogScanSpec(prefix='np.'),),
+        path_prefixes=('np.', 'numpy.'),
+        blacklist=_NUMPY_BLACKLIST,
+        type_allowlist=_NUMPY_TYPE_ALLOWLIST,
+        object_module_roots=('numpy',),
+        gate_types_with_allowlist=True,
+    ),
+    CatalogModuleSpec(
+        key='go',
+        label='plotly.graph_objects (go)',
+        import_path='plotly.graph_objects',
+        scans=(CatalogScanSpec(prefix='go.'),),
+        path_prefixes=('go.', 'plotly.graph_objects.', 'plotly.graph_objs.'),
+        object_module_roots=('plotly.graph_objects', 'plotly.graph_objs'),
+    ),
+    CatalogModuleSpec(
+        key='px',
+        label='plotly.express (px)',
+        import_path='plotly.express',
+        scans=(CatalogScanSpec(prefix='px.'),),
+        path_prefixes=('px.', 'plotly.express.'),
+        object_module_roots=('plotly.express',),
+        gate_types_with_allowlist=True,
+    ),
+    CatalogModuleSpec(
+        key='plotly.subplots',
+        label='plotly.subplots',
+        import_path='plotly.subplots',
+        scans=(CatalogScanSpec(prefix='plotly.subplots.'),),
+        path_prefixes=('plotly.subplots.',),
+        object_module_roots=('plotly.subplots',),
+        gate_types_with_allowlist=True,
+    ),
 )
 
 _REGISTERED_CATALOG_MODULE_SPECS: dict[str, CatalogModuleSpec] = {}
@@ -205,6 +244,7 @@ def _invalidate_catalog_caches() -> None:
     _module_labels.cache_clear()
     _spec_by_key.cache_clear()
     _path_prefix_to_module.cache_clear()
+    runtime_global_bindings.cache_clear()
     from acherion.catalog import runtime as _catalog_runtime
 
     _catalog_runtime.clear_catalog_runtime_caches()
@@ -330,6 +370,25 @@ def module_options() -> dict[str, str]:
     return dict(_module_labels())
 
 
+@functools.lru_cache(maxsize=1)
+def runtime_global_bindings() -> dict[str, Any]:
+    """Return runtime globals derived from registered catalog modules."""
+    bindings: dict[str, Any] = {}
+    for loaded_module in available_modules():
+        spec = loaded_module.spec
+        bindings.setdefault(spec.key, loaded_module.module)
+        if spec.import_path:
+            root_name = str(spec.import_path).split('.', 1)[0]
+            try:
+                bindings.setdefault(
+                    root_name,
+                    importlib.import_module(root_name),
+                )
+            except ImportError:
+                continue
+    return bindings
+
+
 def path_to_module(path: str) -> str:
     """Infer module key from a function or class path."""
     for prefix, module_key in _path_prefix_to_module():
@@ -375,6 +434,7 @@ __all__ = [
     'path_to_module',
     'register_catalog_module_specs',
     'resolve_attr_path',
+    'runtime_global_bindings',
     'scan_targets',
     'strip_module_prefix',
 ]

@@ -12,6 +12,7 @@ standalone host that compiles graphs into executable Python code.
 - A reusable NiceGUI workbench component for embedding inside your own app
 - A typed graph model for saving, restoring, compiling, and executing graphs
 - Preview execution hooks with transient runtime bindings and value summaries
+- Built-in NumPy and Plotly support for array- and figure-oriented nodes
 - Extension points for custom hosts, catalog modules, preview adapters, and
 	validation helpers
 

@@ -6,6 +6,7 @@ import importlib.resources
 import re
 from collections.abc import Mapping
 from functools import lru_cache
+from typing import Any
 
 
 AcherionThemeOverrides = Mapping[str, str]
@@ -83,6 +84,14 @@ _THEME_ALIAS_TO_VARIABLE: dict[str, str] = {
     'sidebar_panel_bg_strong': '--ach-sidebar-panel-bg-strong',
 }
 
+_DEFAULT_PLOTLY_FONT_SIZE = 15
+_PLOTLY_FONT_FAMILY = (
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, '
+    'Arial, sans-serif'
+)
+_PLOTLY_COLORWAY = ('--oe-blue', '--oe-green', '--oe-red', '--oe-yellow')
+_PLOTLY_EXTRA_COLORWAY = ('#FF7A00', '--oe-muted', '#7856FF')
+
 _COMMENT_RE = re.compile(r'/\*.*?\*/', flags=re.S)
 _RULE_RE = re.compile(r'(?s)([^{}]+)\{([^{}]*)\}')
 
@@ -138,6 +147,111 @@ def acherion_ui_colors(
         'negative': theme_values['--oe-red'],
         'warning': theme_values['--oe-yellow'],
         'info': theme_values['--oe-blue'],
+    }
+
+
+def acherion_plotly_template_payload(
+    theme_overrides: AcherionThemeOverrides | None = None,
+) -> dict[str, Any]:
+    """Return a serialized Plotly template payload for Acherion's dark theme."""
+    theme_values = dict(_DEFAULT_THEME_VARIABLES)
+    theme_values.update(normalize_acherion_theme_overrides(theme_overrides))
+    colorway = [
+        theme_values[color_key]
+        for color_key in _PLOTLY_COLORWAY
+        if color_key in theme_values
+    ]
+    colorway.extend(_PLOTLY_EXTRA_COLORWAY)
+    base_font = {
+        'color': theme_values['--oe-text'],
+        'family': _PLOTLY_FONT_FAMILY,
+        'size': _DEFAULT_PLOTLY_FONT_SIZE,
+    }
+    muted_font = {
+        'color': theme_values['--oe-muted'],
+        'size': _DEFAULT_PLOTLY_FONT_SIZE - 2,
+    }
+    title_font = {
+        'color': theme_values['--oe-text'],
+        'size': _DEFAULT_PLOTLY_FONT_SIZE + 2,
+    }
+    axis_title_font = {
+        'color': theme_values['--oe-text'],
+        'size': _DEFAULT_PLOTLY_FONT_SIZE - 1,
+    }
+    return {
+        'layout': {
+            'paper_bgcolor': 'rgba(0,0,0,0)',
+            'plot_bgcolor': 'rgba(0,0,0,0)',
+            'font': base_font,
+            'title': {'font': title_font},
+            'xaxis': {
+                'gridcolor': theme_values['--oe-border'],
+                'zerolinecolor': theme_values['--oe-border'],
+                'linecolor': theme_values['--oe-border'],
+                'tickcolor': theme_values['--oe-muted'],
+                'tickfont': muted_font,
+                'title': {'font': axis_title_font},
+            },
+            'yaxis': {
+                'gridcolor': theme_values['--oe-border'],
+                'zerolinecolor': theme_values['--oe-border'],
+                'linecolor': theme_values['--oe-border'],
+                'tickcolor': theme_values['--oe-muted'],
+                'tickfont': muted_font,
+                'title': {'font': axis_title_font},
+            },
+            'polar': {
+                'bgcolor': 'rgba(0,0,0,0)',
+                'angularaxis': {
+                    'gridcolor': theme_values['--oe-border'],
+                    'linecolor': theme_values['--oe-border'],
+                    'tickcolor': theme_values['--oe-muted'],
+                    'tickfont': muted_font,
+                },
+                'radialaxis': {
+                    'gridcolor': theme_values['--oe-border'],
+                    'linecolor': theme_values['--oe-border'],
+                    'tickcolor': theme_values['--oe-muted'],
+                    'tickfont': muted_font,
+                    'title': {'font': axis_title_font},
+                },
+            },
+            'legend': {
+                'bgcolor': theme_values['--oe-legend-bgcolor'],
+                'bordercolor': theme_values['--oe-border'],
+                'borderwidth': 1,
+                'font': {
+                    'color': theme_values['--oe-text'],
+                    'size': _DEFAULT_PLOTLY_FONT_SIZE - 1,
+                },
+            },
+            'colorway': colorway,
+            'margin': {'l': 48, 'r': 24, 't': 40, 'b': 40},
+            'hoverlabel': {
+                'bgcolor': theme_values['--oe-surface'],
+                'bordercolor': theme_values['--oe-border'],
+                'font': {'color': theme_values['--oe-text']},
+            },
+        },
+        'data': {
+            'heatmap': [
+                {
+                    'hovertemplate': (
+                        'X: %{x:.3f}<br>Y: %{y:.3f}<br>Value: %{z}'
+                        '<extra></extra>'
+                    ),
+                }
+            ],
+            'scatter': [
+                {
+                    'hovertemplate': (
+                        'X: %{x:.3f}<br>Y: %{y:.3f}<br>%{fullData.name}'
+                        '<extra></extra>'
+                    ),
+                }
+            ],
+        },
     }
 
 
@@ -234,6 +348,7 @@ def build_embedded_acherion_theme_css(
 
 __all__ = [
     'AcherionThemeOverrides',
+    'acherion_plotly_template_payload',
     'acherion_ui_colors',
     'build_acherion_theme_override_css',
     'build_embedded_acherion_theme_css',

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from copy import deepcopy
 from typing import Any, cast
 
 from acherion.catalog import types as _catalog_types
+from acherion.theme import acherion_plotly_template_payload
 
 
 @dataclass
@@ -71,6 +73,30 @@ def preview_value_summary(value: Any) -> str:
     return _simple_summary(value)
 
 
+def preview_value_plotly_payload(value: Any) -> dict[str, Any] | None:
+    """Return serialized payload for one Plotly figure preview value."""
+    value_type = type(value)
+    module_name = str(getattr(value_type, '__module__', '') or '')
+    if not module_name.startswith('plotly'):
+        return None
+    serializer = getattr(value, 'to_plotly_json', None)
+    if not callable(serializer):
+        return None
+    try:
+        payload = serializer()
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    themed_payload = deepcopy(payload)
+    layout = themed_payload.get('layout')
+    if not isinstance(layout, dict):
+        layout = {}
+        themed_payload['layout'] = layout
+    layout['template'] = acherion_plotly_template_payload()
+    return themed_payload
+
+
 def _simple_summary(value: Any) -> str:
     if value is None:
         return 'None'
@@ -107,6 +133,7 @@ def _simple_summary(value: Any) -> str:
 __all__ = [
     'AcherionPreviewRunResult',
     'AcherionPreviewValueAdapter',
+    'preview_value_plotly_payload',
     'preview_value_summary',
     'preview_value_type_tag',
     'register_preview_value_adapter',

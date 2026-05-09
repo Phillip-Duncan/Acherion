@@ -76,10 +76,9 @@ def source_key_params(_node_id: str) -> dict[str, Any]:
 
 def custom_function_params(node_id: str) -> dict[str, Any]:
     """Return default params for a new custom-function node."""
-
-    function_name = f'custom_function_{node_id}'
+    del node_id
     return {
-        'function_path': f'user.{function_name}',
+        'function_path': '',
         'module': 'user',
         'arg_count': 0,
         'arg_sources': [],
