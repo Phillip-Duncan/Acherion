@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.3.0 (2026-05-09)
+
+### Features
+
+- Add persistent workbench preferences and shared shortcut config
+  ([`17533b7`](https://github.com/Phillip-Duncan/Acherion/commit/17533b7fd15b4eaac09e05adf43c8d29717bb785))
+
+
 ## v0.2.2 (2026-05-09)
 
 
