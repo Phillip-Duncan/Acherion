@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acherion"
+version = "0.1.0"
+description = "Embeddable NiceGUI flow-graph editor and runtime workbench that compiles graphs into Python"
+readme = {file = "README.md", content-type = "text/markdown"}
+authors = [
+    {name = "Phillip Duncan-Gelder"},
+]
+license = "GPL-2.0-only"
+keywords = [
+    "flow-graph",
+    "visual-programming",
+    "nicegui",
+    "python",
+    "code-generation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: User Interfaces",
+    "Typing :: Typed",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "jedi>=0.19.0",
+    "nicegui>=3.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0",
+    "build>=1.2.1",
+    "mypy>=1.0",
+    "python-semantic-release>=10.5.3,<11",
+    "pytest>=7.0",
+    "twine>=5.1.0",
+]
+
+[project.scripts]
+acherion = "acherion.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["acherion*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+acherion = ["py.typed", "theme.css"]
+
+[tool.semantic_release]
+allow_zero_version = true
+commit_message = "chore(release): {version} [skip ci]"
+commit_parser = "conventional"
+major_on_zero = false
+tag_format = "v{version}"
+version_toml = ["pyproject.toml:project.version"]
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.changelog]
+mode = "update"
+exclude_commit_patterns = [
+    '''chore(?:\([^)]*?\))?: .+''',
+    '''ci(?:\([^)]*?\))?: .+''',
+    '''style(?:\([^)]*?\))?: .+''',
+    '''test(?:\([^)]*?\))?: .+''',
+    '''refactor(?:\([^)]*?\))?: .+''',
+    '''build(?:\([^)]*?\))?: .+''',
+    '''Initial [Cc]ommit.*''',
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+output_format = "md"
+
+[tool.semantic_release.remote]
+name = "origin"
+type = "github"

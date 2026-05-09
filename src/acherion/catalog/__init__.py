@@ -1,0 +1,1 @@
+"""Visual logic catalog package."""

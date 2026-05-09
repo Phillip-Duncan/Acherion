@@ -1,0 +1,1 @@
+"""Shared non-UI render helpers for Acherion core."""
