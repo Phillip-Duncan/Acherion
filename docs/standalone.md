@@ -3,6 +3,8 @@
 The standalone entry point packages Acherion as a full-screen NiceGUI app using
 the generic `StandaloneAcherionHost`.
 
+![Acherion standalone workbench showing the graph editor, compile flow, and preview output.](assets/branding/standalone-example-1.png)
+
 ## Launching the app
 
 From an installed package:

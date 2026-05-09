@@ -4,6 +4,10 @@ Acherion is a NiceGUI-based visual programming environment that compiles
 node-based graphs into Python source code. It is designed to support two main
 deployment styles:
 
+<p align="center">
+  <img src="assets/branding/logo-mark.svg" alt="Acherion mark" width="140">
+</p>
+
 - standalone use through the packaged `acherion` application
 - embedding inside a larger NiceGUI application through reusable workbench and
   host abstractions

@@ -1,5 +1,7 @@
 # Acherion
 
+![Acherion](https://raw.githubusercontent.com/Phillip-Duncan/Acherion/main/docs/assets/branding/logo-lockup-bkg.png)
+
 Acherion is an embeddable flow-graph editor and runtime workbench for Python.
 It provides a NiceGUI-based visual designer, a typed graph/runtime API, and a
 standalone host that compiles graphs into executable Python code.
@@ -55,6 +57,8 @@ The standalone app mounts a full-screen Acherion workbench with:
 - the generated-code pane
 - live preview execution for the default `run` event
 - graph-to-Python validation through the standalone host
+
+![Acherion standalone workbench showing node search, graph editing, compilation, and live preview.](https://raw.githubusercontent.com/Phillip-Duncan/Acherion/main/docs/assets/branding/standalone-example-1.png)
 
 ## Embedding quick start
 

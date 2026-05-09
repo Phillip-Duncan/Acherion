@@ -35,6 +35,12 @@ dependencies = [
     "nicegui>=3.2.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Phillip-Duncan/Acherion"
+Repository = "https://github.com/Phillip-Duncan/Acherion"
+Documentation = "https://github.com/Phillip-Duncan/Acherion/tree/main/docs"
+Issues = "https://github.com/Phillip-Duncan/Acherion/issues"
+
 [project.optional-dependencies]
 dev = [
     "black>=23.0",
