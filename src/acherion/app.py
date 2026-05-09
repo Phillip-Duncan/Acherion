@@ -66,6 +66,7 @@ def _register_pages() -> None:
             refresh_code_after_build=True,
             validate_generated_code=load_acherion_graph_namespace,
             apply_to_code_status_message='Generated code refreshed.',
+            session_storage_key='acherion.preferences',
         )
         workbench.build()
         _run_preview()

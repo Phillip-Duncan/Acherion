@@ -12,6 +12,8 @@ from acherion import (
 )
 from acherion.catalog import modules as _catalog_modules
 from acherion.catalog import runtime as _catalog_runtime
+from acherion.embed.designer.interactions import _DesignerInteractionsMixin
+import acherion.embed.render.editor as acherion_render_editor
 from acherion.embed.render.pins import _RenderPinsMixin
 from acherion.graphops.catalog import _GraphOpsCatalogMixin
 from acherion.graphops.pins import _GraphOpsPinsMixin
@@ -233,6 +235,114 @@ def run(bindings=None):
     assert local_values['root'] == 3.0
     assert type(local_values['figure']).__name__ == 'Figure'
     assert type(local_values['subplot']).__name__ == 'Figure'
+
+
+def test_clear_selection_shortcut_clears_selected_nodes() -> None:
+    class _StubDesigner(_DesignerInteractionsMixin):
+        def __init__(self) -> None:
+            self._selected_node_ids = {'n1', 'n2'}
+            self._selected_connection_id = None
+            self.refresh_count = 0
+            self.hint_updates = 0
+
+        def refresh(self) -> None:
+            self.refresh_count += 1
+
+        def _update_hint(self) -> None:
+            self.hint_updates += 1
+
+    designer = _StubDesigner()
+
+    class _Event:
+        args = {'shortcut_id': 'clear_selection', 'key': 'Escape'}
+
+    designer._handle_canvas_key(_Event())
+
+    assert designer._selected_node_ids == set()
+    assert designer.refresh_count == 1
+    assert designer.hint_updates == 1
+
+
+def _capture_editor_number_call(monkeypatch, node: AcherionNode) -> dict[str, object]:
+    calls: list[dict[str, object]] = []
+
+    class _StubUiElement:
+        def props(self, _value):
+            return self
+
+        def classes(self, _value):
+            return self
+
+    def _fake_number(*args, **kwargs):
+        calls.append({'args': args, 'kwargs': kwargs})
+        return _StubUiElement()
+
+    class _StubEditor(acherion_render_editor._RenderEditorMixin):
+        def __init__(self) -> None:
+            self._host = None
+
+        def _is_system_sink_node(self, _node: AcherionNode) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        acherion_render_editor,
+        'get_acherion_node_definition',
+        lambda _kind: None,
+    )
+    monkeypatch.setattr(
+        acherion_render_editor.ui,
+        'input',
+        lambda *args, **kwargs: _StubUiElement(),
+    )
+    monkeypatch.setattr(
+        acherion_render_editor.ui,
+        'label',
+        lambda *args, **kwargs: _StubUiElement(),
+    )
+    monkeypatch.setattr(acherion_render_editor.ui, 'number', _fake_number)
+
+    _StubEditor()._render_node_config_fields(node)
+
+    assert calls
+    return calls[0]
+
+
+def test_make_list_editor_uses_numeric_number_bounds(monkeypatch) -> None:
+    call = _capture_editor_number_call(
+        monkeypatch,
+        AcherionNode(
+            node_id='list',
+            kind='make_list',
+            params={'arg_count': 3},
+        ),
+    )
+
+    kwargs = call['kwargs']
+
+    assert kwargs['min'] == 0
+    assert isinstance(kwargs['min'], int)
+    assert kwargs['step'] == 1
+    assert isinstance(kwargs['step'], int)
+
+
+def test_sequencer_editor_uses_numeric_number_bounds(monkeypatch) -> None:
+    call = _capture_editor_number_call(
+        monkeypatch,
+        AcherionNode(
+            node_id='seq',
+            kind='sequencer',
+            params={'then_count': 4},
+        ),
+    )
+
+    kwargs = call['kwargs']
+
+    assert kwargs['min'] == 2
+    assert isinstance(kwargs['min'], int)
+    assert kwargs['max'] == 8
+    assert isinstance(kwargs['max'], int)
+    assert kwargs['step'] == 1
+    assert isinstance(kwargs['step'], int)
 
 
 def test_plot_figure_codegen_uses_shared_go_runtime_global() -> None:

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from acherion.constants import _CANVAS_WORLD_WIDTH, _GRID_SNAP_SIZE
-from acherion.assets.css import CHROME_CSS, NODE_CSS, WORKBENCH_CSS
+from acherion.assets.css import CHROME_CSS, NODE_CSS, SEARCH_CSS, WORKBENCH_CSS
 from acherion.assets.js import CLIENT_JS
 
 
 def _build_css_bundle() -> str:
     """Return the compiled CSS bundle for the designer workbench."""
-    return '\n'.join((WORKBENCH_CSS, NODE_CSS, CHROME_CSS)).replace(
+    return '\n'.join((SEARCH_CSS, WORKBENCH_CSS, NODE_CSS, CHROME_CSS)).replace(
         '__CANVAS_STAGE_WIDTH__',
         str(_CANVAS_WORLD_WIDTH * 2),
     ).replace('__ACH_GRID_SNAP_SIZE__', str(_GRID_SNAP_SIZE))

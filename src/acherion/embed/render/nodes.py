@@ -114,13 +114,15 @@ class _RenderNodesMixin:
                 js_handler=(
                     '(e) => {'
                     'if (e.button !== 0) return;'
-                    'if (e.ctrlKey || e.metaKey) return;'
                     'if (e.target.closest('
                     '".q-btn,.q-field,.q-checkbox,.q-toggle,'
                     '.ach-pin-btn,input,textarea,select")) return;'
                     'const node = e.currentTarget;'
                     'const viewport = node.closest(".ach-shell");'
                     'const helper = window.__oeAcherion;'
+                    'if (helper && helper.matchesShortcut('
+                    'e, "toggle_selection", "click"'
+                    ')) return;'
                     'if (!viewport || !helper) return;'
                     'const point = helper.worldPoint(viewport, e.clientX, e.clientY);'
                     'const stage = helper.stage(viewport);'
@@ -148,7 +150,11 @@ class _RenderNodesMixin:
                     '".q-btn,.q-field,.q-checkbox,.q-toggle,'
                     '.ach-pin-btn,input,textarea,select")) return;'
                     'const vp = e.currentTarget.closest(".ach-shell");'
-                    'const toggle = !!(e.ctrlKey || e.metaKey);'
+                    'const helper = window.__oeAcherion;'
+                    'const toggle = !!('
+                    'helper && helper.matchesShortcut('
+                    'e, "toggle_selection", "click"'
+                    '));'
                     'if (toggle) {'
                     'if (vp) vp.dataset.suppressNextCanvasClick = "1";'
                     'e.preventDefault(); e.stopPropagation();'
@@ -664,12 +670,17 @@ class _RenderNodesMixin:
                         )
 
                     with ui.row().classes('w-full ach-palette-search'):
-                        ui.input(
+                        search_input = ui.input(
                             placeholder='Search nodes...',
                             on_change=lambda e: _set_palette_query(
                                 getattr(e, 'value', ''),
                             ),
-                        ).props('outlined dense clearable').classes('w-full')
+                        ).props('outlined dense clearable').classes(
+                            'w-full ach-pill-search-input '
+                            'ach-palette-search-input'
+                        )
+                        with search_input.add_slot('prepend'):
+                            ui.icon('search').classes('ach-pill-search-icon')
 
                 @ui.refreshable
                 def _render_palette_items() -> None:

@@ -225,6 +225,16 @@ class _DesignerInteractionsMixin:
         self._reset_context_menu_queries()
         if self._ctx_container_el is not None:
             self._ctx_container_el.clear()
+        frame_dom_id = getattr(self, '_frame_dom_id', '')
+        if frame_dom_id:
+            self._run_client_javascript(
+                f'(function(){{'
+                f'const frame=document.getElementById({frame_dom_id!r});'
+                f'if(!frame)return;'
+                f'frame.querySelectorAll(".ach-ctx-menu,.ach-ctx-backdrop")'
+                f'.forEach((el) => el.remove());'
+                f'}})()'
+            )
         self._update_hint()
 
     def _next_default_group_name(self: Any) -> str:
@@ -434,8 +444,10 @@ class _DesignerInteractionsMixin:
         self._add_node_at_position(kind, x, y)
 
     def _handle_canvas_key(self: Any, event: Any) -> None:
-        key = str((event.args or {}).get('key') or '')
-        if key in {'Delete', 'Backspace'}:
+        args = dict(event.args or {})
+        shortcut_id = str(args.get('shortcut_id') or '')
+        key = str(args.get('key') or '')
+        if shortcut_id == 'delete_selection_primary':
             if self._selected_node_ids:
                 to_delete = set(self._selected_node_ids)
                 self._selected_node_ids.clear()
@@ -443,7 +455,7 @@ class _DesignerInteractionsMixin:
             else:
                 self._delete_selected_connection()
             return
-        if key == 'Escape':
+        if shortcut_id == 'clear_selection' or key == 'Escape':
             if self._selected_node_ids:
                 self._selected_node_ids.clear()
                 self.refresh()
@@ -465,13 +477,23 @@ class _DesignerInteractionsMixin:
                 'if (e.target.closest(".ach-palette-shell")) return;'
                 'const vp = e.currentTarget;'
                 'const h = window.__oeAcherion;'
-                'if ((e.ctrlKey || e.metaKey) && h) {'
+                'if (h && h.matchesShortcut(e, "box_select_add", "drag")) {'
                 'h.ensureViewportState(vp);'
                 'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
                 'vp.dataset.rubberActive = "1";'
                 'vp.dataset.rubberStartX = String(pt.x);'
                 'vp.dataset.rubberStartY = String(pt.y);'
-                'vp.dataset.rubberShift = e.shiftKey ? "1" : "0";'
+                'vp.dataset.rubberShift = "1";'
+                'vp.classList.add("ach-shell-selecting");'
+                'return;'
+                '}'
+                'if (h && h.matchesShortcut(e, "box_select", "drag")) {'
+                'h.ensureViewportState(vp);'
+                'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
+                'vp.dataset.rubberActive = "1";'
+                'vp.dataset.rubberStartX = String(pt.x);'
+                'vp.dataset.rubberStartY = String(pt.y);'
+                'vp.dataset.rubberShift = "0";'
                 'vp.classList.add("ach-shell-selecting");'
                 'return;'
                 '}'
@@ -664,9 +686,9 @@ class _DesignerInteractionsMixin:
                 'const h = window.__oeAcherion;'
                 'if (e.target.closest(".ach-palette-shell")) return;'
                 'if (vp.dataset.dragNodeId || vp.dataset.dragCandidateNodeId) return;'
-                'if (!e.ctrlKey) return;'
+                'if (!h || !h.matchesShortcut(e, "zoom_canvas", "wheel")) return;'
                 'e.preventDefault();'
-                'if (h) h.ensureViewportState(vp);'
+                'h.ensureViewportState(vp);'
                 'const stage = vp.querySelector(".ach-canvas");'
                 'if (!stage) return;'
                 'const rect = vp.getBoundingClientRect();'
@@ -758,12 +780,20 @@ class _DesignerInteractionsMixin:
             self._handle_canvas_key,
             js_handler=(
                 '(e) => {'
-                'if (!["Delete","Backspace","Escape"].includes(e.key)) return;'
+                'const h = window.__oeAcherion;'
+                'if (!h) return;'
                 'const tag = (e.target.tagName || "").toUpperCase();'
                 'if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"'
                 ' || e.target.isContentEditable) return;'
+                'let shortcutId = "";'
+                'if (h.matchesShortcut(e, "delete_selection_primary", "keyboard")) {'
+                'shortcutId = "delete_selection_primary";'
+                '} else if (h.matchesShortcut(e, "clear_selection", "keyboard")) {'
+                'shortcutId = "clear_selection";'
+                '}'
+                'if (!shortcutId) return;'
                 'e.preventDefault(); e.stopPropagation();'
-                'emit({key:e.key});'
+                'emit({shortcut_id: shortcutId, key:e.key});'
                 '}'
             ),
         )

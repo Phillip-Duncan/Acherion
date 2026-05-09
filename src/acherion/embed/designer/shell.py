@@ -260,6 +260,7 @@ class _DesignerShellMixin:
 
         self.force_redraw()
         self._apply_mode_visibility()
+        self.apply_preferences_state()
 
     def force_redraw(self: Any) -> None:
         """Refresh graph UI again after layout settles."""
@@ -545,6 +546,7 @@ class _DesignerShellMixin:
                     self._render_toolbar_menu(
                         'File',
                         [
+                            ('Preferences', self._open_preferences_dialog),
                             ('Compile to Code', self._apply_to_code),
                             ('Refresh Canvas', self.refresh),
                         ],
@@ -669,9 +671,15 @@ class _DesignerShellMixin:
 
     def _show_shortcuts_help(self: Any) -> None:
         self._notify_ui(
-            'Shortcuts: Ctrl+click multi-select. Right-click selection for '
-            'group and function actions. Delete removes selected nodes or '
-            'wires.',
+            'Shortcuts: '
+            f'{self._shortcut_display_binding("toggle_selection")} toggles '
+            'node selection. '
+            f'{self._shortcut_display_binding("box_select")} starts box '
+            'selection. '
+            f'{self._shortcut_display_binding("delete_selection_primary")} '
+            'deletes selected nodes or connections. '
+            f'{self._shortcut_display_binding("clear_selection")} clears '
+            'selection.',
             type='info',
         )
 
@@ -751,14 +759,19 @@ class _DesignerShellMixin:
                 count = len(self._selected_node_ids)
                 message = (
                     f'{count} node{"s" if count > 1 else ""} selected. '
-                    'Ctrl+click to toggle. Drag any selected node to move '
-                    'group. Right-click for group options. Delete to '
-                    'remove. Escape to deselect.'
+                    f'{self._shortcut_display_binding("toggle_selection")} '
+                    'toggles selection. Drag any selected node to move '
+                    'group. Right-click for group options. '
+                    f'{self._shortcut_display_binding("delete_selection_primary")} '
+                    'removes selection. '
+                    f'{self._shortcut_display_binding("clear_selection")} '
+                    'clears it.'
                 )
             elif self._selected_connection_id is not None:
                 message = (
-                    'Connection selected. Press Delete or Backspace to '
-                    'remove it, or right-click the wire.'
+                    'Connection selected. Press '
+                    f'{self._shortcut_display_binding("delete_selection_primary")} '
+                    'to remove it, or right-click the wire.'
                 )
             elif self._pending_source_node_id is not None:
                 message = (

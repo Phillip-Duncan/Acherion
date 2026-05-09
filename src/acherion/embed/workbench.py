@@ -7,8 +7,9 @@ from collections.abc import Mapping
 from contextlib import nullcontext
 from typing import Any, Callable
 
-from nicegui import ui
+from nicegui import background_tasks, ui
 
+import acherion.preferences as acherion_preferences
 from acherion.embed.code_editor import build_python_code_editor
 from acherion.embed.designer.component import AcherionDesigner
 from acherion.host import AcherionHost
@@ -48,6 +49,12 @@ class AcherionWorkbench:
         validate_generated_code: Callable[[str], Any] | None = None,
         apply_to_code_status_message: str | None = None,
         theme_overrides: Mapping[str, str] | None = None,
+        preferences: Mapping[str, Any] | None = None,
+        load_preferences: Callable[[], Mapping[str, Any] | None] | None = None,
+        save_preferences: (
+            Callable[[dict[str, dict[str, str]]], None] | None
+        ) = None,
+        session_storage_key: str | None = None,
     ) -> None:
         self._on_change = on_change
         self._on_apply_to_code = on_apply_to_code
@@ -55,7 +62,6 @@ class AcherionWorkbench:
         self._host_build_code_view = build_code_view
         self._before_build = before_build
         self._container_classes = container_classes
-        self._code_editor_theme = code_editor_theme
         self._code_editor_classes = code_editor_classes
         self._code_editor_style = code_editor_style
         self._code_transform = code_transform
@@ -63,6 +69,21 @@ class AcherionWorkbench:
         self._refresh_code_after_build = refresh_code_after_build
         self._validate_generated_code = validate_generated_code
         self._apply_to_code_status_message = apply_to_code_status_message
+        initial_preferences = {
+            'appearance': {
+                'code_editor_theme': str(code_editor_theme or '').strip()
+                or acherion_preferences.DEFAULT_CODE_EDITOR_THEME,
+            },
+        }
+        self._preferences_state = (
+            acherion_preferences.AcherionPreferencesState(initial_preferences)
+        )
+        self._preferences_state.apply_mapping(preferences)
+        if load_preferences is not None:
+            self._preferences_state.apply_mapping(load_preferences())
+        self._code_editor_theme = self._preferences_state.code_editor_theme
+        self._save_preferences = save_preferences
+        self._session_storage_key = str(session_storage_key or '').strip()
         self._theme_overrides = (
             dict(theme_overrides)
             if theme_overrides is not None
@@ -80,6 +101,9 @@ class AcherionWorkbench:
             on_validate=self._handle_validate,
             build_code_view=self._build_code_view,
             on_mode_change=on_mode_change,
+            preferences_state=self._preferences_state,
+            on_preferences_change=self._handle_preferences_change,
+            on_preferences_preview=self._preview_preferences,
             initial_mode=initial_mode,
         )
 
@@ -93,10 +117,28 @@ class AcherionWorkbench:
         """Return the registered code-view widget, if one exists."""
         return self._code_view
 
+    def preferences_dict(self) -> dict[str, dict[str, str]]:
+        """Return the current workbench preferences as a plain dictionary."""
+        return self._preferences_state.to_dict()
+
     def set_code_view(self, code_view: Any) -> Any:
         """Register the current code-view widget for refresh operations."""
         self._code_view = code_view
+        self._apply_code_editor_theme()
         return code_view
+
+    def set_preferences(
+        self,
+        preferences: Mapping[str, Any] | None,
+        *,
+        persist: bool = True,
+    ) -> None:
+        """Replace current preferences and apply the new runtime state."""
+        if not self._preferences_state.apply_mapping(preferences):
+            if persist:
+                self._persist_preferences()
+            return
+        self._apply_preference_state(persist=persist)
 
     def set_theme_overrides(
         self,
@@ -131,8 +173,10 @@ class AcherionWorkbench:
             self._designer.build()
         self._built = True
         self._apply_theme_state()
+        self._apply_preference_state(persist=False)
         if self._refresh_code_after_build:
             self.refresh_code_view()
+        self._load_session_preferences()
 
     def generated_user_code(self) -> str:
         """Return the underlying designer's generated user code."""
@@ -179,7 +223,7 @@ class AcherionWorkbench:
             'variables': next_variables,
             'removeNames': remove_names,
         })
-        self._designer._run_client_javascript(
+        self._designer.run_client_javascript(
             '(() => {'
             f'const payload = {payload};'
             'const frame = document.getElementById(payload.frameId);'
@@ -222,11 +266,85 @@ class AcherionWorkbench:
         ):
             editor = build_python_code_editor(
                 value='',
-                theme=self._code_editor_theme,
+                theme=self._preferences_state.code_editor_theme,
                 classes=self._code_editor_classes,
                 style=self._code_editor_style,
             )
         self.set_code_view(editor)
+
+    def _apply_code_editor_theme(self) -> None:
+        """Push the active editor theme into the current code view."""
+        if self._code_view is None:
+            return
+        theme_name = self._preferences_state.code_editor_theme
+        setter = getattr(self._code_view, 'set_theme', None)
+        if callable(setter):
+            setter(theme_name)
+            return
+        if hasattr(self._code_view, 'theme'):
+            self._code_view.theme = theme_name
+
+    def _apply_preference_state(self, *, persist: bool) -> None:
+        """Apply shared preference state to runtime widgets and hooks."""
+        self._code_editor_theme = self._preferences_state.code_editor_theme
+        self._apply_code_editor_theme()
+        if self._built:
+            apply_preferences = getattr(
+                self._designer,
+                'apply_preferences_state',
+                None,
+            )
+            if callable(apply_preferences):
+                apply_preferences()
+        if persist:
+            self._persist_preferences()
+
+    def _handle_preferences_change(
+        self,
+        preferences: dict[str, dict[str, str]],
+    ) -> None:
+        """Persist designer-side preference edits through the wrapper."""
+        self.set_preferences(preferences)
+
+    def _preview_preferences(
+        self,
+        preferences: dict[str, dict[str, str]],
+    ) -> None:
+        """Apply non-persisted preference previews from the dialog."""
+        self.set_preferences(preferences, persist=False)
+
+    def _persist_preferences(self) -> None:
+        """Persist the current preferences through configured backends."""
+        preferences_payload = self.preferences_dict()
+        if self._save_preferences is not None:
+            self._save_preferences(preferences_payload)
+        if self._session_storage_key:
+            payload = json.dumps(preferences_payload)
+            self._designer.set_session_storage_item(
+                self._session_storage_key,
+                payload,
+            )
+
+    def _load_session_preferences(self) -> None:
+        """Load standalone preferences from session storage after build."""
+        if not self._session_storage_key:
+            return
+        async def _load() -> None:
+            raw_preferences = await self._designer.get_session_storage_item(
+                self._session_storage_key
+            )
+            if not raw_preferences:
+                return
+            try:
+                loaded_preferences = json.loads(str(raw_preferences))
+            except json.JSONDecodeError:
+                return
+            self.set_preferences(loaded_preferences, persist=False)
+
+        background_tasks.create(
+            _load(),
+            name='acherion load session preferences',
+        )
 
     def _handle_change(self) -> None:
         """Dispatch designer change notifications through the wrapper."""

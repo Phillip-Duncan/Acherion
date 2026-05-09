@@ -370,7 +370,7 @@ class _RenderEditorMixin:
 
                 editor = acherion_code_editor.build_python_code_editor(
                     value=draft_source['value'],
-                    theme='vscodeDark',
+                    theme=self._preferences_state.code_editor_theme,
                     on_change=_on_editor_change,
                     classes='w-full oe-code-editor',
                     style='height:min(48vh, 420px); min-height:260px',
@@ -1178,23 +1178,28 @@ class _RenderEditorMixin:
             ui.number(
                 label='Item count',
                 value=int(node.params.get('arg_count', 0) or 0),
+                min=0,
+                step=1,
                 format='%d',
                 on_change=lambda e, cur=node: _apply_change(
                     lambda: self._set_editor_arg_count(cur, e.value),
                 ),
-            ).props('outlined dense min=0 step=1').classes('w-full ach-editor-field')
+            ).props('outlined dense').classes('w-full ach-editor-field')
             return
 
         if node.kind == 'sequencer':
             ui.number(
                 label='Step count',
                 value=int(node.params.get('then_count', 2) or 2),
+                min=2,
+                max=8,
+                step=1,
                 format='%d',
                 on_change=lambda e, cur=node: _apply_change(
                     lambda: self._set_editor_then_count(cur, e.value),
                     refresh_after=True,
                 ),
-            ).props('outlined dense min=2 max=8 step=1').classes(
+            ).props('outlined dense').classes(
                 'w-full ach-editor-field'
             )
             ui.label(

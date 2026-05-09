@@ -229,6 +229,348 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
 .ach-validate-button .q-icon {
     font-size: 16px;
 }
+.ach-preferences-dialog-card {
+    width: min(97vw, 1508px);
+    max-width: 1508px;
+    height: min(94vh, 1014px);
+    padding: 0 !important;
+    border: 1px solid var(--oe-border);
+    border-radius: 18px !important;
+    background: color-mix(in srgb, var(--oe-surface) 96%, #000 4%) !important;
+    box-shadow: var(--oe-menu-shadow);
+    overflow: hidden;
+}
+.ach-preferences-dialog-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+.ach-preferences-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--oe-border);
+    background: color-mix(in srgb, var(--oe-surface) 90%, transparent);
+    box-sizing: border-box;
+}
+.ach-preferences-dialog-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--oe-text);
+    letter-spacing: 0.01em;
+}
+.ach-preferences-search-row {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 14px 20px 0;
+    box-sizing: border-box;
+}
+.ach-preferences-search-input {
+    width: 100%;
+}
+.ach-preferences-select .q-field__control {
+    min-height: 40px !important;
+    border-radius: 9999px !important;
+    background: var(--oe-bg) !important;
+}
+.ach-preferences-select .q-field__native,
+.ach-preferences-select .q-field__input,
+.ach-preferences-select input {
+    color: var(--oe-text) !important;
+}
+.ach-preferences-select .q-field__label {
+    color: var(--oe-muted) !important;
+}
+.ach-preferences-dialog-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    padding: 0 20px 0;
+    box-sizing: border-box;
+}
+.ach-preferences-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--oe-surface) 92%, #000 8%);
+}
+.ach-preferences-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 248px;
+    min-width: 248px;
+    padding: 14px 12px 16px;
+    border-right: 1px solid var(--oe-border);
+    background: color-mix(in srgb, var(--oe-bg) 78%, transparent);
+    box-sizing: border-box;
+}
+.ach-preferences-main {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+}
+.ach-preferences-nav-item.q-btn {
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 12px;
+    border-radius: 10px;
+    color: var(--oe-text);
+}
+.ach-preferences-nav-item .q-btn__content {
+    justify-content: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.ach-preferences-nav-item .q-icon,
+.ach-preferences-nav-item-active .q-icon {
+    font-size: 18px;
+}
+.ach-preferences-nav-item:hover {
+    background: var(--oe-hover-tint);
+}
+.ach-preferences-nav-item-active {
+    background: color-mix(in srgb, var(--oe-blue) 16%, transparent);
+    color: var(--oe-text) !important;
+    border: 1px solid color-mix(in srgb, var(--oe-blue) 48%, transparent);
+}
+.ach-preferences-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: 14px;
+    min-height: 0;
+    min-width: 0;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 18px 20px;
+    box-sizing: border-box;
+}
+.ach-preferences-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.ach-preferences-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--oe-text);
+}
+.ach-preferences-card,
+.ach-preferences-shortcut-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.35fr);
+    align-items: center;
+    gap: 18px;
+    width: 100%;
+    padding: 16px 18px;
+    border: 1px solid color-mix(in srgb, var(--oe-border) 84%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--oe-bg) 62%, transparent);
+    box-sizing: border-box;
+}
+.ach-preferences-card {
+    grid-template-columns: 1fr;
+}
+.ach-preferences-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.35fr);
+    gap: 18px;
+    align-items: center;
+}
+.ach-preferences-row-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.ach-preferences-field-label,
+.ach-preferences-shortcut-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--oe-text);
+}
+.ach-preferences-field-help,
+.ach-preferences-empty {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--oe-muted);
+}
+.ach-preferences-shortcut-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.ach-preferences-group-title {
+    padding: 6px 2px 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--oe-muted);
+}
+.ach-preferences-shortcut-meta {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+.ach-preferences-shortcut-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+}
+.ach-preferences-shortcut-kind {
+    flex: 0 0 auto;
+    min-width: 72px;
+    padding: 5px 10px;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--oe-border) 84%, transparent);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: center;
+    text-transform: uppercase;
+    color: var(--oe-muted);
+    background: color-mix(in srgb, var(--oe-surface) 90%, transparent);
+}
+.ach-preferences-select {
+    flex: 1 1 auto;
+}
+.ach-preferences-theme-select {
+    width: 100%;
+}
+.ach-preferences-capture-box {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 40px;
+    width: 100%;
+    padding: 0 12px;
+    border: 1px solid color-mix(in srgb, var(--oe-border) 84%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--oe-bg) 72%, transparent);
+    color: var(--oe-text);
+    cursor: text;
+    outline: none;
+    transition: border-color 0.14s ease, background 0.14s ease;
+}
+.ach-preferences-capture-box:hover {
+    border-color: color-mix(in srgb, var(--oe-text) 18%, var(--oe-border));
+}
+.ach-preferences-capture-box-readonly,
+.ach-preferences-capture-box-readonly:hover {
+    border-color: color-mix(in srgb, var(--oe-border) 72%, transparent);
+    background: color-mix(in srgb, var(--oe-bg) 42%, transparent);
+    color: var(--oe-muted);
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+.ach-preferences-capture-box-active {
+    border-color: color-mix(in srgb, var(--oe-blue) 72%, transparent);
+    background: color-mix(in srgb, var(--oe-blue) 8%, transparent);
+}
+.ach-preferences-capture-value {
+    font-size: 13px;
+    font-weight: 500;
+    color: inherit;
+    user-select: none;
+}
+.ach-preferences-section-reset,
+.ach-preferences-close-text,
+.ach-preferences-close.q-btn--flat,
+.ach-preferences-close.q-btn--flat .q-icon {
+    color: var(--oe-text) !important;
+}
+.ach-preferences-section-reset,
+.ach-preferences-close-text,
+.ach-preferences-save,
+.ach-preferences-close {
+    min-height: 40px !important;
+}
+.ach-preferences-section-reset,
+.ach-preferences-close-text {
+    padding: 0 16px !important;
+    border-radius: 9999px !important;
+    border: 1px solid transparent !important;
+}
+.ach-preferences-section-reset:hover,
+.ach-preferences-close-text:hover {
+    background: var(--oe-hover-tint) !important;
+    border-color: color-mix(in srgb, var(--oe-border) 84%, transparent) !important;
+}
+.ach-preferences-close {
+    width: 40px !important;
+    min-width: 40px !important;
+    border-radius: 9999px !important;
+}
+.ach-preferences-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    width: 100%;
+    padding: 14px 20px 18px;
+    border-top: 1px solid var(--oe-border);
+    background: color-mix(in srgb, var(--oe-surface) 90%, transparent);
+    box-sizing: border-box;
+}
+.ach-preferences-save {
+    padding: 0 16px !important;
+    border-radius: 9999px !important;
+    background: var(--oe-blue) !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+}
+@media (max-width: 900px) {
+    .ach-preferences-dialog-card {
+        width: min(99vw, 1508px);
+        height: min(95vh, 1014px);
+    }
+    .ach-preferences-body {
+        flex-direction: column;
+    }
+    .ach-preferences-sidebar {
+        width: 100%;
+        min-width: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--oe-border);
+    }
+    .ach-preferences-row,
+    .ach-preferences-shortcut-row {
+        grid-template-columns: 1fr;
+    }
+    .ach-preferences-shortcut-controls {
+        width: 100%;
+        min-width: 0;
+        grid-template-columns: 1fr;
+        justify-items: flex-start;
+    }
+    .ach-preferences-footer {
+        justify-content: flex-start;
+    }
+}
 .ach-workbench-body {
     position: relative;
     display: flex;

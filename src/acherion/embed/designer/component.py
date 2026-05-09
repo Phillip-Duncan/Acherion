@@ -4,11 +4,13 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any, Callable
 
 from nicegui.client import Client
 
+import acherion.preferences as acherion_preferences
 from acherion.constants import (
     _DROP_X_OFFSET,
     _DROP_Y_OFFSET,
@@ -16,6 +18,9 @@ from acherion.constants import (
 from acherion.host import AcherionHost
 from acherion.embed.designer.interactions import (
     _DesignerInteractionsMixin,
+)
+from acherion.embed.designer.preferences_dialog import (
+    _DesignerPreferencesDialogMixin,
 )
 from acherion.embed.designer.shell import (
     _DesignerShellMixin,
@@ -47,6 +52,7 @@ from acherion.embed.render.pins import _RenderPinsMixin
 
 
 class AcherionDesigner(  # pyright: ignore
+    _DesignerPreferencesDialogMixin,
     _DesignerShellMixin,
     _DesignerInteractionsMixin,
     _GraphOpsCatalogMixin,
@@ -71,6 +77,17 @@ class AcherionDesigner(  # pyright: ignore
         on_validate: Callable[[], bool] | None = None,
         build_code_view: Callable[[], None] | None = None,
         on_mode_change: Callable[[str], None] | None = None,
+        preferences_state: (
+            acherion_preferences.AcherionPreferencesState | None
+        ) = None,
+        on_preferences_change: Callable[
+            [dict[str, dict[str, str]]],
+            None,
+        ] | None = None,
+        on_preferences_preview: Callable[
+            [dict[str, dict[str, str]]],
+            None,
+        ] | None = None,
         initial_mode: str = 'graph',
     ) -> None:
         self._graph = AcherionGraph()
@@ -81,6 +98,12 @@ class AcherionDesigner(  # pyright: ignore
         self._on_validate = on_validate
         self._build_code_view = build_code_view
         self._on_mode_change = on_mode_change
+        self._preferences_state = (
+            preferences_state
+            or acherion_preferences.AcherionPreferencesState()
+        )
+        self._on_preferences_change = on_preferences_change
+        self._on_preferences_preview = on_preferences_preview
         self._editor_mode: str = initial_mode
         self._preview_bindings: dict[str, dict[str, Any]] = {}
         self._preview_reference_values: dict[str, Any] = {}
@@ -107,6 +130,14 @@ class AcherionDesigner(  # pyright: ignore
         self._ctx_menu_query: str = ''
         self._ctx_align_query: str = ''
         self._palette_query: str = ''
+        self._preferences_dialog: Any = None
+        self._preferences_search_query: str = ''
+        self._preferences_active_category: str = 'Appearance'
+        self._preferences_draft = self._preferences_state.to_dict()
+        self._preferences_saved_snapshot = self._preferences_state.to_dict()
+        self._preferences_commit_on_close: bool = False
+        self._preferences_capture_shortcut_id: str | None = None
+        self._preferences_dialog_body: Any = None
         self._css_injected: bool = False
         self._client_js_injected: bool = False
         self._client: Client | None = None  # type: ignore[assignment]
@@ -121,3 +152,44 @@ class AcherionDesigner(  # pyright: ignore
     def frame_dom_id(self) -> str:
         """Return the stable DOM id for the root workbench element."""
         return self._frame_dom_id
+
+    def run_client_javascript(
+        self,
+        code: str,
+        *,
+        timeout: float = 1.0,
+    ) -> None:
+        """Run one client-side JavaScript snippet through the designer."""
+        self._run_client_javascript(code, timeout=timeout)
+
+    def set_session_storage_item(self, key: str, value: str) -> None:
+        """Store one string value in session storage for this client."""
+        payload = json.dumps({'key': key, 'value': value})
+        self.run_client_javascript(
+            '(() => {'
+            f'const payload = {payload};'
+            'try {'
+            '  sessionStorage.setItem(payload.key, payload.value);'
+            '} catch (_error) {'
+            '}'
+            '})();'
+        )
+
+    async def get_session_storage_item(self, key: str) -> str:
+        """Read one string value from session storage for this client."""
+        client = self._client
+        if client is None:
+            return ''
+        result = await client.run_javascript(
+            '(() => {'
+            'try {'
+            f'  return sessionStorage.getItem({key!r}) || "";'
+            '} catch (_error) {'
+            '  return "";'
+            '}'
+            '})();',
+            timeout=3.0,
+        )
+        if result is None:
+            return ''
+        return str(result)
