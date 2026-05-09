@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acherion"
-version = "0.1.0"
+version = "0.2.0"
 description = "Embeddable NiceGUI flow-graph editor and runtime workbench that compiles graphs into Python"
 readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
