@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import inspect
 import types
@@ -249,6 +250,8 @@ def clear_catalog_runtime_caches() -> None:
     """Clear cached catalog runtime lookups after module registration."""
     _build_catalog.cache_clear()
     class_methods.cache_clear()
+    class_attributes.cache_clear()
+    method_func_entry.cache_clear()
 
 
 def catalog_entry(path: str) -> _catalog_models.FuncEntry | None:
@@ -353,17 +356,62 @@ def _class_can_be_called_without_args(
     return True
 
 
+def _declared_public_attribute_names(cls: type) -> tuple[str, ...]:
+    """Return declared public attribute names for one class."""
+    names: dict[str, None] = {}
+    if dataclasses.is_dataclass(cls):
+        try:
+            for field in dataclasses.fields(cls):
+                field_name = str(field.name or '').strip()
+                if field_name and not field_name.startswith('_'):
+                    names.setdefault(field_name, None)
+        except TypeError:
+            pass
+    namedtuple_fields = getattr(cls, '_fields', ())
+    if isinstance(namedtuple_fields, tuple):
+        for field_name in namedtuple_fields:
+            clean_name = str(field_name or '').strip()
+            if clean_name and not clean_name.startswith('_'):
+                names.setdefault(clean_name, None)
+    for klass in reversed(cls.__mro__):
+        annotations = getattr(klass, '__annotations__', None)
+        if isinstance(annotations, dict):
+            for field_name in annotations:
+                clean_name = str(field_name or '').strip()
+                if clean_name and not clean_name.startswith('_'):
+                    names.setdefault(clean_name, None)
+        raw_slots = getattr(klass, '__slots__', ())
+        if isinstance(raw_slots, str):
+            slot_names = (raw_slots,)
+        else:
+            try:
+                slot_names = tuple(raw_slots or ())
+            except TypeError:
+                slot_names = ()
+        for slot_name in slot_names:
+            clean_name = str(slot_name or '').strip()
+            if clean_name and not clean_name.startswith('_'):
+                names.setdefault(clean_name, None)
+    return tuple(names)
+
+
 @functools.lru_cache(maxsize=256)
 def class_attributes(class_path: str) -> dict[str, str]:
     """Return {attr_name: attr_name} for non-callable public members."""
     cls = _class_object(class_path)
     if cls is None:
         return {}
-    result: dict[str, str] = {}
+    result: dict[str, str] = {
+        name: name for name in _declared_public_attribute_names(cls)
+    }
     if _class_can_be_called_without_args(class_path, cls):
         try:
             instance = cls()
-            for name, value in vars(instance).items():
+            try:
+                instance_items = vars(instance).items()
+            except TypeError:
+                instance_items = ()
+            for name, value in instance_items:
                 if name.startswith('_'):
                     continue
                 if not callable(value):

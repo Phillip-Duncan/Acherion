@@ -122,6 +122,11 @@ class _RenderEditorMixin:
         """Mutate draft node title without persisting to the graph."""
         node.title = str(value or '')
 
+    @staticmethod
+    def _default_make_dict_key_name(index: int) -> str:
+        """Return fallback key label for one make_dict input."""
+        return f'key_{index + 1}'
+
     def _set_editor_arg_count(
         self: Any,
         node: AcherionNode,
@@ -129,17 +134,46 @@ class _RenderEditorMixin:
     ) -> None:
         """Mutate draft arg_count and arg_sources without persisting."""
         lower_bound = (
-            0 if node.kind in {'call_function', 'custom_function', 'make_list'}
+            0
+            if node.kind in {
+                'call_function',
+                'custom_function',
+                'make_list',
+                'make_dict',
+            }
             else 1
         )
         arg_count = max(lower_bound, int(value or 0))
-        if node.kind != 'make_list':
+        if node.kind not in {'make_list', 'make_dict'}:
             arg_count = min(8, arg_count)
         arg_sources = list(node.params.get('arg_sources') or [])
         while len(arg_sources) < arg_count:
             arg_sources.append('')
         node.params['arg_sources'] = arg_sources[:arg_count]
         node.params['arg_count'] = arg_count
+        if node.kind == 'make_dict':
+            key_names = list(node.params.get('key_names') or [])
+            while len(key_names) < arg_count:
+                key_names.append(
+                    self._default_make_dict_key_name(len(key_names))
+                )
+            node.params['key_names'] = key_names[:arg_count]
+
+    def _set_editor_make_dict_key(
+        self: Any,
+        node: AcherionNode,
+        index: int,
+        value: Any,
+    ) -> None:
+        """Mutate one make_dict key name without persisting."""
+        key_names = list(node.params.get('key_names') or [])
+        while len(key_names) <= index:
+            key_names.append(
+                self._default_make_dict_key_name(len(key_names))
+            )
+        clean_key = str(value or '').strip()
+        key_names[index] = clean_key or self._default_make_dict_key_name(index)
+        node.params['key_names'] = key_names
 
     def _set_editor_then_count(
         self: Any,
@@ -1187,6 +1221,49 @@ class _RenderEditorMixin:
             ).props('outlined dense').classes('w-full ach-editor-field')
             return
 
+        if node.kind == 'make_dict':
+            entry_count = int(node.params.get('arg_count', 0) or 0)
+            ui.number(
+                label='Entry count',
+                value=entry_count,
+                min=0,
+                step=1,
+                format='%d',
+                on_change=lambda e, cur=node: _apply_change(
+                    lambda: self._set_editor_arg_count(cur, e.value),
+                    refresh_after=True,
+                ),
+            ).props('outlined dense').classes('w-full ach-editor-field')
+            if entry_count <= 0:
+                ui.label(
+                    'Increase entry count to add key/value pairs.'
+                ).classes('text-xs oe-muted')
+                return
+            ui.label(
+                'Each key names the matching input pin in the output dict.'
+            ).classes('text-xs oe-muted')
+            key_names = list(node.params.get('key_names') or [])
+            for index in range(entry_count):
+                default_key = self._default_make_dict_key_name(index)
+                current_key = str(
+                    key_names[index] if index < len(key_names) else default_key
+                ).strip() or default_key
+                ui.input(
+                    f'Key {index + 1}',
+                    value=current_key,
+                    on_change=lambda e, cur=node, idx=index: _apply_change(
+                        lambda: self._set_editor_make_dict_key(
+                            cur,
+                            idx,
+                            e.value,
+                        ),
+                    ),
+                ).props('outlined dense').classes('w-full ach-editor-field')
+            ui.label(
+                'Duplicate keys follow normal Python dict rules; later entries win.'
+            ).classes('text-xs oe-muted')
+            return
+
         if node.kind == 'sequencer':
             ui.number(
                 label='Step count',
@@ -1207,8 +1284,13 @@ class _RenderEditorMixin:
             ).classes('text-xs oe-muted')
             return
 
-        if node.kind == 'list_index':
+        if node.kind in {'list_index', 'list_set'}:
             mode = str(node.params.get('mode') or 'index').strip()
+            node_label = (
+                'Get List Value(s)'
+                if node.kind == 'list_index'
+                else 'Set List Value(s)'
+            )
 
             def _bound_display(key: str) -> str:
                 raw_value = node.params.get(key)
@@ -1272,7 +1354,14 @@ class _RenderEditorMixin:
                     ),
                 ).props('outlined dense type=number').classes('w-full ach-editor-field')
                 ui.label(
-                    'Uses Python slice semantics: source[start:stop:step].'
+                    (
+                        'Uses Python slice semantics: '
+                        'source[start:stop:step].'
+                        if node.kind == 'list_index'
+                        else 'Uses Python slice assignment semantics: '
+                        'result[start:stop:step] = value. Connect an '
+                        'iterable replacement when updating list slices.'
+                    )
                 ).classes('text-xs oe-muted')
             else:
                 ui.number(
@@ -1287,6 +1376,13 @@ class _RenderEditorMixin:
                         ),
                     ),
                 ).props('outlined dense step=1').classes('w-full ach-editor-field')
+                if node.kind == 'list_set':
+                    ui.label(
+                        'Returns a copied list or ndarray with one item updated.'
+                    ).classes('text-xs oe-muted')
+            ui.label(
+                f'{node_label} works with lists and ndarrays.'
+            ).classes('text-xs oe-muted')
             return
 
         if node.kind == 'plot_figure':

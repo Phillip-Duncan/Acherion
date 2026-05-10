@@ -130,6 +130,7 @@ class AcherionDesigner(  # pyright: ignore
         self._ctx_menu_query: str = ''
         self._ctx_align_query: str = ''
         self._palette_query: str = ''
+        self._palette_collapsed_categories: set[str] = set()
         self._preferences_dialog: Any = None
         self._preferences_search_query: str = ''
         self._preferences_active_category: str = 'Appearance'

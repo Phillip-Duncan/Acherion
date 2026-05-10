@@ -439,6 +439,35 @@ def _emit_make_list_node(
     return True
 
 
+def _emit_make_dict_node(
+    *,
+    state: EmitState,
+    node: AcherionNode,
+    params: dict[str, Any],
+    indent: str,
+    var_name: str,
+    method_owner_name: str | None = 'self',
+) -> bool:
+    del method_owner_name
+    arg_count = max(0, int(params.get('arg_count', 0) or 0))
+    args = _arg_exprs(
+        params,
+        state.node_vars,
+        arg_count=arg_count,
+    )
+    key_names = list(params.get('key_names') or [])
+    entries = []
+    for index, expr in enumerate(args):
+        default_key = f'key_{index + 1}'
+        key_name = str(
+            key_names[index] if index < len(key_names) else default_key
+        ).strip() or default_key
+        entries.append(f'{key_name!r}: {expr}')
+    state.lines.append(f"{indent}{var_name} = {{{', '.join(entries)}}}")
+    state.store(node.node_id, var_name)
+    return True
+
+
 def _emit_list_index_node(
     *,
     state: EmitState,
@@ -457,6 +486,121 @@ def _emit_list_index_node(
     state.lines.append(
         f'{indent}{var_name} = {_list_index_expr(src, params)}'
     )
+    state.store(node.node_id, var_name)
+    return True
+
+
+def _emit_list_set_node(
+    *,
+    state: EmitState,
+    node: AcherionNode,
+    params: dict[str, Any],
+    indent: str,
+    var_name: str,
+    method_owner_name: str | None = 'self',
+) -> bool:
+    del method_owner_name
+    source_expr = _input_param_expr(
+        params,
+        'source',
+        state.node_vars,
+        fallback='[]',
+    )
+    value_expr = _input_param_expr(
+        params,
+        'value',
+        state.node_vars,
+    )
+    base_var = f'{var_name}_base'
+    state.lines.append(f'{indent}{base_var} = {source_expr}')
+    state.lines.append(
+        f'{indent}{var_name} = ('
+        f'{base_var}.copy() if hasattr({base_var}, "copy") else '
+        f'(list({base_var}) if isinstance({base_var}, (list, tuple, range)) '
+        f'else [])'
+        f')'
+    )
+    state.lines.append(f'{indent}try:')
+    state.lines.append(
+        f'{indent}    {_list_index_expr(var_name, params)} = {value_expr}'
+    )
+    state.lines.append(f'{indent}except (IndexError, TypeError, ValueError):')
+    state.lines.append(f'{indent}    pass')
+    state.store(node.node_id, var_name)
+    return True
+
+
+def _emit_dict_get_node(
+    *,
+    state: EmitState,
+    node: AcherionNode,
+    params: dict[str, Any],
+    indent: str,
+    var_name: str,
+    method_owner_name: str | None = 'self',
+) -> bool:
+    del method_owner_name
+    dict_expr = _input_param_expr(
+        params,
+        'source',
+        state.node_vars,
+    )
+    key_expr = _input_param_expr(
+        params,
+        'key',
+        state.node_vars,
+        fallback="''",
+    )
+    default_expr = _input_param_expr(
+        params,
+        'default',
+        state.node_vars,
+        fallback='None',
+    )
+    dict_var = f'{var_name}_dict'
+    state.lines.append(f'{indent}{dict_var} = {dict_expr}')
+    state.lines.append(
+        f'{indent}{var_name} = '
+        f'{dict_var}.get({key_expr}, {default_expr}) '
+        f'if isinstance({dict_var}, dict) else {default_expr}'
+    )
+    state.store(node.node_id, var_name)
+    return True
+
+
+def _emit_dict_set_node(
+    *,
+    state: EmitState,
+    node: AcherionNode,
+    params: dict[str, Any],
+    indent: str,
+    var_name: str,
+    method_owner_name: str | None = 'self',
+) -> bool:
+    del method_owner_name
+    dict_expr = _input_param_expr(
+        params,
+        'source',
+        state.node_vars,
+    )
+    key_expr = _input_param_expr(
+        params,
+        'key',
+        state.node_vars,
+        fallback="''",
+    )
+    value_expr = _input_param_expr(
+        params,
+        'value',
+        state.node_vars,
+    )
+    base_var = f'{var_name}_base'
+    state.lines.append(f'{indent}{base_var} = {dict_expr}')
+    state.lines.append(
+        f'{indent}{var_name} = '
+        f'dict({base_var}) if isinstance({base_var}, dict) else {{}}'
+    )
+    state.lines.append(f'{indent}{var_name}[{key_expr}] = {value_expr}')
     state.store(node.node_id, var_name)
     return True
 
@@ -529,7 +673,11 @@ _COMPUTE_NODE_EMITTERS: dict[str, _EmitNodeHandler] = {
     'op_logic': _emit_op_logic_node,
     'op_not': _emit_op_not_node,
     'make_list': _emit_make_list_node,
+    'make_dict': _emit_make_dict_node,
     'list_index': _emit_list_index_node,
+    'list_set': _emit_list_set_node,
+    'dict_get': _emit_dict_get_node,
+    'dict_set': _emit_dict_set_node,
     'plot_figure': _emit_plot_figure_node,
 }
 

@@ -11,30 +11,42 @@ from acherion.node import AcherionNodeDefinition
 _PALETTE_CATEGORY_ORDER: tuple[str, ...] = (
     'ui',
     'source',
+    'math',
+    'logic',
+    'collections',
     'compute',
     'flow',
     'object',
     'composite',
+    'visualization',
     'effect',
 )
 
 _PALETTE_CATEGORY_LABELS: dict[str, str] = {
     'ui': 'UI',
-    'source': 'Runtime',
+    'source': 'Events',
+    'math': 'Math',
+    'logic': 'Logic',
+    'collections': 'Collections',
     'compute': 'Compute',
     'flow': 'Flow',
-    'object': 'Objects',
-    'composite': 'Composite',
+    'object': 'Objects & APIs',
+    'composite': 'Functions',
+    'visualization': 'Visualization',
     'effect': 'Effects',
 }
 
 _PALETTE_CATEGORY_ICONS: dict[str, str] = {
     'ui': 'widgets',
-    'source': 'input',
+    'source': 'bolt',
+    'math': 'calculate',
+    'logic': 'device_hub',
+    'collections': 'inventory_2',
     'compute': 'calculate',
     'flow': 'alt_route',
     'object': 'code',
     'composite': 'functions',
+    'visualization': 'bar_chart',
     'effect': 'bolt',
 }
 

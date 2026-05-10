@@ -68,7 +68,7 @@ class CollectNode(acherion_node.FlowNodeDefinition):
         node: object,
     ) -> list[dict[str, str]] | None:
         del owner, node
-        return [acherion_node.pin('value', 'list', 'any')]
+        return [acherion_node.pin('value', 'list', 'list')]
 
 
 class BranchValueNode(acherion_node.FlowNodeDefinition):

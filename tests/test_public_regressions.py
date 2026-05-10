@@ -16,10 +16,12 @@ from acherion.catalog import modules as _catalog_modules
 from acherion.catalog import runtime as _catalog_runtime
 from acherion.embed.designer.interactions import _DesignerInteractionsMixin
 import acherion.embed.render.editor as acherion_render_editor
+import acherion.embed.render.nodes as acherion_render_nodes
 from acherion.embed.render.pins import _RenderPinsMixin
 from acherion.graphops.catalog import _GraphOpsCatalogMixin
 from acherion.graphops.pins import _GraphOpsPinsMixin
 from acherion.preview import preview_value_plotly_payload
+import acherion.registry as acherion_registry
 import numpy as np
 import plotly.graph_objects as go
 from acherion.standalone_host import (
@@ -137,6 +139,230 @@ def test_duplicate_titled_producer_nodes_compile_to_distinct_variables() -> None
     assert 'arithmetic_5 = (one_1) + (two_2)' in source_code
     assert 'arithmetic_6 = (ten_3) + (twenty_4)' in source_code
     assert local_values['pair_7'] == [3, 30]
+
+
+def test_dict_nodes_build_read_and_copy_update_dict_values() -> None:
+    graph = AcherionGraph(
+        nodes=[
+            AcherionNode(
+                node_id='c1',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 1,
+                },
+            ),
+            AcherionNode(
+                node_id='c2',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 2,
+                },
+            ),
+            AcherionNode(
+                node_id='d1',
+                kind='make_dict',
+                params={
+                    'arg_count': 2,
+                    'arg_sources': ['c1', 'c2'],
+                    'key_names': ['alpha', 'beta'],
+                },
+            ),
+            AcherionNode(
+                node_id='g1',
+                kind='dict_get',
+                params={
+                    'source': 'd1',
+                    'pin_literals': {'key': 'beta'},
+                },
+            ),
+            AcherionNode(
+                node_id='s1',
+                kind='dict_set',
+                params={
+                    'source': 'd1',
+                    'value': 'c2',
+                    'pin_literals': {'key': 'gamma'},
+                },
+            ),
+        ]
+    )
+
+    preview = run_standalone_acherion_preview(graph)
+
+    assert preview.reference_values['d1'] == {'alpha': 1, 'beta': 2}
+    assert preview.reference_values['g1'] == 2
+    assert preview.reference_values['s1'] == {
+        'alpha': 1,
+        'beta': 2,
+        'gamma': 2,
+    }
+    assert preview.reference_values['d1'] == {'alpha': 1, 'beta': 2}
+
+
+def test_list_nodes_get_and_copy_update_single_indices_and_slices() -> None:
+    graph = AcherionGraph(
+        nodes=[
+            AcherionNode(
+                node_id='c1',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 1,
+                },
+            ),
+            AcherionNode(
+                node_id='c2',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 2,
+                },
+            ),
+            AcherionNode(
+                node_id='c3',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 3,
+                },
+            ),
+            AcherionNode(
+                node_id='c9',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 9,
+                },
+            ),
+            AcherionNode(
+                node_id='l1',
+                kind='make_list',
+                params={
+                    'arg_sources': ['c1', 'c2', 'c3'],
+                },
+            ),
+            AcherionNode(
+                node_id='g1',
+                kind='list_index',
+                params={
+                    'source': 'l1',
+                    'index': 1,
+                },
+            ),
+            AcherionNode(
+                node_id='s1',
+                kind='list_set',
+                params={
+                    'source': 'l1',
+                    'value': 'c9',
+                    'mode': 'index',
+                    'index': 1,
+                },
+            ),
+            AcherionNode(
+                node_id='r1',
+                kind='make_list',
+                params={
+                    'arg_sources': ['c9', 'c9'],
+                },
+            ),
+            AcherionNode(
+                node_id='s2',
+                kind='list_set',
+                params={
+                    'source': 'l1',
+                    'value': 'r1',
+                    'mode': 'slice',
+                    'start': 1,
+                    'stop': 3,
+                    'step': 1,
+                },
+            ),
+        ]
+    )
+
+    preview = run_standalone_acherion_preview(graph)
+
+    assert preview.reference_values['g1'] == 2
+    assert preview.reference_values['s1'] == [1, 9, 3]
+    assert preview.reference_values['s2'] == [1, 9, 9]
+    assert preview.reference_values['l1'] == [1, 2, 3]
+
+
+def test_list_set_tracks_value_dependency_even_when_declared_later() -> None:
+    graph = AcherionGraph(
+        nodes=[
+            AcherionNode(
+                node_id='c1',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 1,
+                },
+            ),
+            AcherionNode(
+                node_id='c2',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 2,
+                },
+            ),
+            AcherionNode(
+                node_id='c3',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 3,
+                },
+            ),
+            AcherionNode(
+                node_id='l1',
+                kind='make_list',
+                params={
+                    'arg_sources': ['c1', 'c2', 'c3'],
+                },
+            ),
+            AcherionNode(
+                node_id='s1',
+                kind='list_set',
+                params={
+                    'source': 'l1',
+                    'value': 'c9',
+                    'mode': 'index',
+                    'index': 1,
+                },
+            ),
+            AcherionNode(
+                node_id='c9',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 9,
+                },
+            ),
+        ]
+    )
+
+    preview = run_standalone_acherion_preview(graph)
+
+    assert preview.reference_values['s1'] == [1, 9, 3]
+
+
+def test_list_index_definition_keeps_index_and_slice_defaults() -> None:
+    definition = acherion_registry.get_acherion_node_definition('list_index')
+
+    assert definition is not None
+    assert definition.default_params(node_id='idx1') == {
+        'source': '',
+        'mode': 'index',
+        'index': 0,
+        'start': '',
+        'stop': '',
+        'step': '',
+    }
 
 
 
@@ -263,6 +489,236 @@ def test_clear_selection_shortcut_clears_selected_nodes() -> None:
     assert designer._selected_node_ids == set()
     assert designer.refresh_count == 1
     assert designer.hint_updates == 1
+
+
+def test_make_dict_editor_arg_count_seeds_key_names() -> None:
+    class _StubEditor(acherion_render_editor._RenderEditorMixin):
+        pass
+
+    editor = _StubEditor()
+    node = AcherionNode(
+        node_id='dict1',
+        kind='make_dict',
+        params={
+            'arg_count': 0,
+            'arg_sources': [],
+            'key_names': [],
+        },
+    )
+
+    editor._set_editor_arg_count(node, 2)
+    editor._set_editor_make_dict_key(node, 1, 'beta')
+
+    assert node.params['arg_count'] == 2
+    assert node.params['arg_sources'] == ['', '']
+    assert node.params['key_names'] == ['key_1', 'beta']
+
+
+def test_palette_taxonomy_groups_like_nodes_together() -> None:
+    sections = acherion_registry._palette_sections()
+    section_map = {
+        category: [item.kind for item in items]
+        for category, items in sections
+    }
+
+    assert list(section_map) == [
+        'math',
+        'logic',
+        'collections',
+        'flow',
+        'object',
+        'composite',
+        'visualization',
+    ]
+    assert section_map['math'] == [
+        'op_arithmetic',
+        'op_unary',
+    ]
+    assert section_map['logic'] == [
+        'compare',
+        'op_logic',
+        'op_not',
+    ]
+    assert section_map['collections'] == [
+        'constant',
+        'make_list',
+        'list_index',
+        'list_set',
+        'make_dict',
+        'dict_get',
+        'dict_set',
+    ]
+    assert section_map['object'] == [
+        'call_function',
+        'call_method',
+        'get_attribute',
+        'set_attribute',
+    ]
+    assert section_map['composite'] == [
+        'custom_function',
+        'function_box',
+    ]
+    assert section_map['visualization'] == ['plot_figure']
+    assert acherion_registry._template_category_label('dict_get') == (
+        'Collections'
+    )
+    assert acherion_registry._template_category_label('custom_function') == (
+        'Functions'
+    )
+    assert acherion_registry._template_category_label('plot_figure') == (
+        'Visualization'
+    )
+
+
+def test_palette_section_expansion_state_respects_search_override() -> None:
+    class _StubNodes(acherion_render_nodes._RenderNodesMixin):
+        def __init__(self) -> None:
+            self._palette_query = ''
+            self._palette_collapsed_categories: set[str] = set()
+
+    owner = _StubNodes()
+
+    assert owner._palette_section_expanded('collections') is True
+
+    owner._toggle_palette_category('collections')
+
+    assert owner._palette_section_expanded('collections') is False
+
+    owner._palette_query = 'dict'
+
+    assert owner._palette_section_expanded('collections') is True
+
+    owner._palette_query = ''
+
+    assert owner._palette_section_expanded('collections') is False
+
+
+def test_list_outputs_resolve_builtin_list_methods_for_call_method() -> None:
+    class _DummyOwner(_GraphOpsCatalogMixin, _GraphOpsPinsMixin):
+        def __init__(self) -> None:
+            self._graph = AcherionGraph(nodes=[])
+            self._preview_reference_values = {}
+
+        def _node_by_id(self, node_id: str) -> AcherionNode | None:
+            for node in self._graph.nodes:
+                if node.node_id == node_id:
+                    return node
+            return None
+
+        @staticmethod
+        def _pure_node_id(source_id: str) -> str:
+            return str(source_id).split('@', 1)[0]
+
+        @staticmethod
+        def _source_pin_index(source_id: str) -> int:
+            if '@' not in str(source_id):
+                return 0
+            return int(str(source_id).split('@', 1)[1] or 0)
+
+    owner = _DummyOwner()
+    list_node = AcherionNode(
+        node_id='list1',
+        kind='make_list',
+        params={'arg_count': 2, 'arg_sources': ['', '']},
+    )
+    owner._graph.nodes.append(list_node)
+
+    assert owner._resolve_instance_class_path('list1') == 'list'
+    methods = _catalog_runtime.class_methods('list')
+    assert 'append' in methods
+    assert methods['append'].startswith('append(')
+
+
+def test_class_attributes_include_declared_fields_without_instantiation(
+    monkeypatch,
+) -> None:
+    class _SyntheticRecord:
+        __annotations__ = {
+            'title': str,
+            '_private_title': str,
+        }
+        __slots__ = ('title', 'count', '_private_count')
+
+        def __init__(self, title: str, count: int) -> None:
+            self.title = title
+            self.count = count
+
+        @property
+        def summary(self) -> str:
+            return f'{self.title}:{self.count}'
+
+        def method(self) -> str:
+            return self.summary
+
+    _catalog_runtime.class_attributes.cache_clear()
+    monkeypatch.setattr(
+        _catalog_runtime,
+        '_class_object',
+        lambda _class_path: _SyntheticRecord,
+    )
+    monkeypatch.setattr(
+        _catalog_runtime._catalog_modules,
+        'path_to_module',
+        lambda _class_path: 'user',
+    )
+
+    attrs = _catalog_runtime.class_attributes('user.SyntheticRecord')
+
+    assert 'title' in attrs
+    assert 'count' in attrs
+    assert 'summary' in attrs
+    assert 'method' not in attrs
+    assert '_private_title' not in attrs
+    assert '_private_count' not in attrs
+
+
+def test_clear_catalog_runtime_caches_resets_attribute_and_method_lookups(
+    monkeypatch,
+) -> None:
+    class _FirstRecord:
+        @property
+        def alpha(self) -> int:
+            return 1
+
+        def ping(self) -> int:
+            return 1
+
+    class _SecondRecord:
+        @property
+        def beta(self) -> int:
+            return 2
+
+        def pong(self) -> int:
+            return 2
+
+    current_cls = {'value': _FirstRecord}
+
+    _catalog_runtime.class_attributes.cache_clear()
+    _catalog_runtime.class_methods.cache_clear()
+    _catalog_runtime.method_func_entry.cache_clear()
+    monkeypatch.setattr(
+        _catalog_runtime,
+        '_class_object',
+        lambda _class_path: current_cls['value'],
+    )
+
+    first_attrs = _catalog_runtime.class_attributes('user.Record')
+    first_method = _catalog_runtime.method_func_entry('user.Record', 'ping')
+
+    assert 'alpha' in first_attrs
+    assert first_method is not None
+    assert first_method.signature.startswith('user.Record.ping(')
+
+    current_cls['value'] = _SecondRecord
+    _catalog_runtime.clear_catalog_runtime_caches()
+
+    second_attrs = _catalog_runtime.class_attributes('user.Record')
+    second_method = _catalog_runtime.method_func_entry('user.Record', 'pong')
+
+    assert 'beta' in second_attrs
+    assert 'alpha' not in second_attrs
+    assert second_method is not None
+    assert second_method.signature.startswith('user.Record.pong(')
 
 
 def _capture_editor_number_call(monkeypatch, node: AcherionNode) -> dict[str, object]:

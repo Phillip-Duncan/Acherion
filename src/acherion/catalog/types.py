@@ -62,8 +62,12 @@ COMPONENT_PYTHON_TYPES: dict[str, str] = {
     'op_not': 'any',
     'compare': 'any',
     'branch_value': 'any',
-    'make_list': 'any',
+    'make_list': 'list',
+    'make_dict': 'dict',
     'list_index': 'any',
+    'list_set': 'any',
+    'dict_get': 'any',
+    'dict_set': 'dict',
 }
 
 OUTPUT_PIN_LABELS: dict[str, str] = {
@@ -77,7 +81,11 @@ OUTPUT_PIN_LABELS: dict[str, str] = {
     'op_not': 'condition',
     'branch_value': 'selected',
     'make_list': 'list',
+    'make_dict': 'dict',
     'list_index': 'value',
+    'list_set': 'list',
+    'dict_get': 'value',
+    'dict_set': 'dict',
     'plot_figure': 'Figure',
 }
 

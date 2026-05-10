@@ -7,9 +7,10 @@ import acherion.node as acherion_node
 
 class ConstantNode(acherion_node.ComputeNodeDefinition):
     kind = 'constant'
+    category = 'collections'
     label = 'Constant'
     icon = 'pin'
-    tooltip = 'Create a number, text, or bool literal.'
+    tooltip = 'Create a number, text, bool, or dict literal.'
     default_params_factory = acherion_node.literal_params({
         'value_type': 'number',
         'number_value': 0.0,
@@ -51,6 +52,7 @@ class ConstantNode(acherion_node.ComputeNodeDefinition):
 
 class ArithmeticNode(acherion_node.ComputeNodeDefinition):
     kind = 'op_arithmetic'
+    category = 'math'
     label = 'Arithmetic'
     icon = 'calculate'
     tooltip = 'Add, subtract, multiply, divide, or raise to a power.'
@@ -93,6 +95,7 @@ class ArithmeticNode(acherion_node.ComputeNodeDefinition):
 
 class MathFunctionNode(acherion_node.ComputeNodeDefinition):
     kind = 'op_unary'
+    category = 'math'
     label = 'Math Function'
     icon = 'exposure'
     tooltip = 'Apply abs, round, ceil, floor, int, float, or negate.'
@@ -127,6 +130,7 @@ class MathFunctionNode(acherion_node.ComputeNodeDefinition):
 
 class CompareNode(acherion_node.ComputeNodeDefinition):
     kind = 'compare'
+    category = 'logic'
     label = 'Compare'
     icon = 'compare_arrows'
     tooltip = 'Compare two values and produce a boolean condition.'
@@ -158,6 +162,7 @@ class CompareNode(acherion_node.ComputeNodeDefinition):
 
 class LogicNode(acherion_node.ComputeNodeDefinition):
     kind = 'op_logic'
+    category = 'logic'
     label = 'Logic (And / Or)'
     icon = 'device_hub'
     tooltip = 'Combine two boolean values with AND or OR.'
@@ -194,6 +199,7 @@ class LogicNode(acherion_node.ComputeNodeDefinition):
 
 class LogicalNotNode(acherion_node.ComputeNodeDefinition):
     kind = 'op_not'
+    category = 'logic'
     label = 'Logical NOT'
     icon = 'block'
     tooltip = 'Invert a boolean value.'
@@ -218,6 +224,7 @@ class LogicalNotNode(acherion_node.ComputeNodeDefinition):
 
 class MakeListNode(acherion_node.ComputeNodeDefinition):
     kind = 'make_list'
+    category = 'collections'
     label = 'Make List'
     icon = 'format_list_bulleted'
     tooltip = 'Build a list from multiple input values.'
@@ -247,16 +254,56 @@ class MakeListNode(acherion_node.ComputeNodeDefinition):
         node: object,
     ) -> list[dict[str, str]] | None:
         del owner, node
-        return [acherion_node.pin('value', 'list', 'any')]
+        return [acherion_node.pin('value', 'list', 'list')]
+
+
+class MakeDictNode(acherion_node.ComputeNodeDefinition):
+    kind = 'make_dict'
+    category = 'collections'
+    label = 'Make Dict'
+    icon = 'account_tree'
+    tooltip = 'Build a dict from named input values.'
+    default_params_factory = acherion_node.literal_params({
+        'arg_count': 0,
+        'arg_sources': [],
+        'key_names': [],
+    })
+
+    def input_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner
+        params = getattr(node, 'params', {})
+        arg_count = max(0, int(params.get('arg_count', 0) or 0))
+        key_names = list(params.get('key_names') or [])
+        pins: list[dict[str, str]] = []
+        for index in range(arg_count):
+            default_key = f'key_{index + 1}'
+            label = str(
+                key_names[index] if index < len(key_names) else default_key
+            ).strip() or default_key
+            pins.append(acherion_node.pin(f'arg:{index}', label, 'any'))
+        return pins
+
+    def output_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner, node
+        return [acherion_node.pin('value', 'dict', 'dict')]
 
 
 class ListIndexNode(acherion_node.ComputeNodeDefinition):
     kind = 'list_index'
-    label = 'Indexing'
+    category = 'collections'
+    label = 'Get List Value(s)'
     icon = 'data_array'
     tooltip = (
-        'Index into a list or ndarray, or switch to slice mode with optional '
-        'bounds.'
+        'Read one list or ndarray item, or switch to slice mode with '
+        'optional bounds.'
     )
     source_param_ids_factory = acherion_node.source_param_ids('source')
     default_params_factory = acherion_node.literal_params({
@@ -268,9 +315,117 @@ class ListIndexNode(acherion_node.ComputeNodeDefinition):
         'step': '',
     })
 
+    def input_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner, node
+        return [acherion_node.pin('source', 'list', 'list')]
+
+
+class ListSetNode(acherion_node.ComputeNodeDefinition):
+    kind = 'list_set'
+    category = 'collections'
+    label = 'Set List Value(s)'
+    icon = 'playlist_add_check'
+    tooltip = (
+        'Return a copied list or ndarray with one item or slice updated.'
+    )
+    source_param_ids_factory = acherion_node.source_param_ids(
+        'source',
+        'value',
+    )
+    default_params_factory = acherion_node.literal_params({
+        'source': '',
+        'mode': 'index',
+        'index': 0,
+        'start': '',
+        'stop': '',
+        'step': '',
+    })
+
+    def input_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner, node
+        return [
+            acherion_node.pin('source', 'list', 'list'),
+            acherion_node.pin('value', 'value', 'any'),
+        ]
+
+
+class DictGetNode(acherion_node.ComputeNodeDefinition):
+    kind = 'dict_get'
+    category = 'collections'
+    label = 'Get Dict Value'
+    icon = 'key'
+    tooltip = 'Read one value from a dict by key, with optional fallback.'
+    default_params_factory = acherion_node.literal_params({
+        'source': '',
+        'key': '',
+        'default': '',
+    })
+
+    def input_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner, node
+        return [
+            acherion_node.pin('source', 'dict', 'dict'),
+            acherion_node.pin('key', 'Key', 'str', editor_kind='text'),
+            acherion_node.pin('default', 'Default', 'any', optional=True),
+        ]
+
+    def output_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner, node
+        return [acherion_node.pin('value', 'value', 'any')]
+
+
+class DictSetNode(acherion_node.ComputeNodeDefinition):
+    kind = 'dict_set'
+    category = 'collections'
+    label = 'Set Dict Value'
+    icon = 'edit'
+    tooltip = 'Return a dict copy with one key updated.'
+    default_params_factory = acherion_node.literal_params({
+        'source': '',
+        'key': '',
+        'value': '',
+    })
+
+    def input_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner, node
+        return [
+            acherion_node.pin('source', 'dict', 'dict'),
+            acherion_node.pin('key', 'Key', 'str', editor_kind='text'),
+            acherion_node.pin('value', 'Value', 'any'),
+        ]
+
+    def output_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner, node
+        return [acherion_node.pin('value', 'dict', 'dict')]
+
 
 class PlotFigureNode(acherion_node.ComputeNodeDefinition):
     kind = 'plot_figure'
+    category = 'visualization'
     label = 'Plot Figure'
     icon = 'bar_chart'
     tooltip = (
@@ -285,13 +440,17 @@ class PlotFigureNode(acherion_node.ComputeNodeDefinition):
 
 BUILTIN_COMPUTE_NODES = (
     ConstantNode(),
+    MakeListNode(),
+    ListIndexNode(),
+    ListSetNode(),
+    MakeDictNode(),
+    DictGetNode(),
+    DictSetNode(),
     ArithmeticNode(),
     MathFunctionNode(),
     CompareNode(),
     LogicNode(),
     LogicalNotNode(),
-    MakeListNode(),
-    ListIndexNode(),
     PlotFigureNode(),
 )
 

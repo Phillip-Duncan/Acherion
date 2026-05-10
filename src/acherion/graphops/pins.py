@@ -60,7 +60,11 @@ _STATIC_INPUT_PIN_SPECS: dict[str, _AcherionPinSpecs] = {
         {'pin_id': 'source', 'label': 'Value', 'type': 'any'},
     ],
     'list_index': [
-        {'pin_id': 'source', 'label': 'Value', 'type': 'any'},
+        {'pin_id': 'source', 'label': 'list', 'type': 'list'},
+    ],
+    'list_set': [
+        {'pin_id': 'source', 'label': 'list', 'type': 'list'},
+        {'pin_id': 'value', 'label': 'value', 'type': 'any'},
     ],
 }
 
@@ -76,7 +80,7 @@ _STATIC_OUTPUT_PIN_SPECS: dict[str, _AcherionPinSpecs] = {
         {'pin_id': 'completed', 'label': 'Completed', 'type': 'exec'},
     ],
     'collect': [
-        {'pin_id': 'value', 'label': 'list', 'type': 'any'},
+        {'pin_id': 'value', 'label': 'list', 'type': 'list'},
     ],
     'op_arithmetic': [
         {'pin_id': 'value', 'label': 'result', 'type': 'any'},
@@ -97,6 +101,9 @@ _STATIC_OUTPUT_PIN_SPECS: dict[str, _AcherionPinSpecs] = {
         {'pin_id': 'value', 'label': 'selected', 'type': 'any'},
     ],
     'make_list': [
+        {'pin_id': 'value', 'label': 'list', 'type': 'list'},
+    ],
+    'list_set': [
         {'pin_id': 'value', 'label': 'list', 'type': 'any'},
     ],
     'plot_figure': [
@@ -122,6 +129,7 @@ _DYNAMIC_OUTPUT_PIN_BUILDERS: dict[str, str] = {
     'call_method': '_call_method_output_pin_specs',
     'get_attribute': '_get_attribute_output_pin_specs',
     'list_index': '_list_index_output_pin_specs',
+    'list_set': '_list_set_output_pin_specs',
 }
 
 _CONSTANT_OUTPUT_TYPE_MAP: dict[str, str] = {
@@ -461,6 +469,26 @@ class _GraphOpsPinsMixin:
                     output_type = source_type
         return [
             {'pin_id': 'value', 'label': 'slice', 'type': output_type},
+        ]
+
+    def _list_set_output_pin_specs(
+        self: Any,
+        node: AcherionNode,
+    ) -> _AcherionPinSpecs:
+        output_type = 'any'
+        source_id = str(node.params.get('source') or '')
+        source_node = self._node_by_id(self._pure_node_id(source_id))
+        if source_node is not None and source_node.node_id != node.node_id:
+            source_pin_index = self._source_pin_index(source_id)
+            source_specs = self._output_pin_specs(source_node)
+            if source_pin_index < len(source_specs):
+                source_type = str(
+                    source_specs[source_pin_index].get('type') or 'any'
+                )
+                if source_type in {'list', 'list[list]', 'np.ndarray'}:
+                    output_type = source_type
+        return [
+            {'pin_id': 'value', 'label': 'list', 'type': output_type},
         ]
 
     def _input_pin_specs(

@@ -70,6 +70,36 @@ class _RenderNodesMixin:
             return 'UI'
         return str(getattr(template, 'flavor', '') or '').upper()
 
+    def _palette_collapsed_category_set(self: Any) -> set[str]:
+        """Return mutable set of collapsed palette categories."""
+        collapsed = getattr(self, '_palette_collapsed_categories', None)
+        if isinstance(collapsed, set):
+            return cast(set[str], collapsed)
+        collapsed = set()
+        self._palette_collapsed_categories = collapsed
+        return cast(set[str], collapsed)
+
+    def _palette_section_expanded(self: Any, category: str) -> bool:
+        """Return whether one palette category should render expanded."""
+        clean_category = str(category or '').strip()
+        if not clean_category:
+            return True
+        query = str(getattr(self, '_palette_query', '') or '').strip()
+        if query:
+            return True
+        return clean_category not in self._palette_collapsed_category_set()
+
+    def _toggle_palette_category(self: Any, category: str) -> None:
+        """Toggle one palette category between collapsed and expanded."""
+        clean_category = str(category or '').strip()
+        if not clean_category:
+            return
+        collapsed = self._palette_collapsed_category_set()
+        if clean_category in collapsed:
+            collapsed.remove(clean_category)
+        else:
+            collapsed.add(clean_category)
+
     def _render_manual_node(
         self: Any,
         node: AcherionNode,
@@ -684,6 +714,10 @@ class _RenderNodesMixin:
 
                 @ui.refreshable
                 def _render_palette_items() -> None:
+                    def _toggle_palette_section(category: str) -> None:
+                        self._toggle_palette_category(category)
+                        _render_palette_items.refresh()
+
                     with ui.element('div').classes('ach-sidebar-pane-stack'):
                         with ui.element('div').classes(
                             'ach-sidebar-pane ach-sidebar-pane-active'
@@ -699,108 +733,137 @@ class _RenderNodesMixin:
                                     if not visible:
                                         continue
                                     rendered_any = True
+                                    expanded = self._palette_section_expanded(
+                                        category
+                                    )
                                     with ui.element('div').classes(
                                         'ach-palette-section'
+                                        + (
+                                            ''
+                                            if expanded else
+                                            ' ach-palette-section-collapsed'
+                                        )
                                     ):
-                                        ui.label(
-                                            _template_category_label(items[0].kind)
-                                        ).classes('ach-palette-section-title')
-                                        with ui.element('div').classes(
-                                            'ach-palette-section-body'
-                                        ):
-                                            for template in visible:
-                                                with ui.element('div').classes(
-                                                    'ach-palette-item'
-                                                ).props(
-                                                    'draggable=true '
-                                                    f'data-kind="{template.kind}"'
-                                                ) as item_el:
-                                                    item_el.on(
-                                                        'click',
-                                                        lambda e, k=template.kind: (
-                                                            owner._add_node(
-                                                                k,
-                                                                center_x=_event_int_arg(
-                                                                    e.args,
-                                                                    'x',
-                                                                ),
-                                                                center_y=_event_int_arg(
-                                                                    e.args,
-                                                                    'y',
-                                                                ),
-                                                            )
-                                                        ),
-                                                        js_handler=(
-                                                            '(e) => {'
-                                                            'const shell = '
-                                                            'e.currentTarget.closest('
-                                                            '".ach-workbench-main")'
-                                                            '?.querySelector('
-                                                            '".ach-shell"'
-                                                            ');'
-                                                            'const helper = '
-                                                            'window.__oeAcherion;'
-                                                            'if (!shell || !helper) {'
-                                                            'emit({});'
-                                                            'return;'
-                                                            '}'
-                                                            'const rect = '
-                                                            'shell.getBoundingClientRect();'
-                                                            'const point = '
-                                                            'helper.worldPoint('
-                                                            'shell,'
-                                                            'rect.left + (rect.width / 2),'
-                                                            'rect.top + (rect.height / 2)'
-                                                            ');'
-                                                            'emit({'
-                                                            'x: Math.round(point.x),'
-                                                            'y: Math.round(point.y)'
-                                                            '});'
-                                                            '}'
-                                                        ),
-                                                    )
-                                                    item_el.on(
-                                                        'dragstart',
-                                                        lambda _e: None,
-                                                        js_handler=(
-                                                            '(e) => {'
-                                                            "e.dataTransfer.setData('text/ach-kind',"
-                                                            'e.currentTarget.dataset.kind);'
-                                                            "e.dataTransfer.effectAllowed='copy';"
-                                                            '}'
-                                                        ),
-                                                    )
-                                                    ui.icon(template.icon).classes(
-                                                        'ach-palette-item-icon '
-                                                        f'ach-node-kind-icon-'
-                                                        f'{template.flavor}'
-                                                    )
+                                        with ui.element('button').classes(
+                                            'ach-palette-section-toggle'
+                                        ).props(
+                                            'type=button '
+                                            f'aria-expanded={'"true"' if expanded else '"false"'}'
+                                        ) as toggle_button:
+                                            toggle_button.on(
+                                                'click',
+                                                lambda _e, cat=category: (
+                                                    _toggle_palette_section(cat)
+                                                ),
+                                            )
+                                            ui.icon(
+                                                'expand_more' if expanded else 'chevron_right'
+                                            ).classes('ach-palette-section-chevron')
+                                            ui.label(
+                                                _template_category_label(
+                                                    items[0].kind
+                                                )
+                                            ).classes('ach-palette-section-title')
+                                            ui.label(str(len(visible))).classes(
+                                                'ach-palette-section-count'
+                                            )
+                                        if expanded:
+                                            with ui.element('div').classes(
+                                                'ach-palette-section-body'
+                                            ):
+                                                for template in visible:
                                                     with ui.element('div').classes(
-                                                        'min-w-0'
-                                                    ):
-                                                        with ui.row().classes(
-                                                            'items-center gap-2'
-                                                        ):
-                                                            ui.label(
-                                                                template.label
-                                                            ).classes(
-                                                                'ach-palette-item-name'
-                                                            )
-                                                            ui.label(
-                                                                self._palette_badge_text(
-                                                                    template
+                                                        'ach-palette-item'
+                                                    ).props(
+                                                        'draggable=true '
+                                                        f'data-kind="{template.kind}"'
+                                                    ) as item_el:
+                                                        item_el.on(
+                                                            'click',
+                                                            lambda e, k=template.kind: (
+                                                                owner._add_node(
+                                                                    k,
+                                                                    center_x=_event_int_arg(
+                                                                        e.args,
+                                                                        'x',
+                                                                    ),
+                                                                    center_y=_event_int_arg(
+                                                                        e.args,
+                                                                        'y',
+                                                                    ),
                                                                 )
-                                                            ).classes(
-                                                                'ach-palette-item-pill '
-                                                                'ach-palette-item-pill-'
-                                                                f'{template.flavor}'
-                                                            )
-                                                        if template.tooltip:
-                                                            ui.label(
-                                                                template.tooltip
-                                                            ).classes(
-                                                                'ach-palette-item-desc'
-                                                            )
+                                                            ),
+                                                            js_handler=(
+                                                                '(e) => {'
+                                                                'const shell = '
+                                                                'e.currentTarget.closest('
+                                                                '".ach-workbench-main")'
+                                                                '?.querySelector('
+                                                                '".ach-shell"'
+                                                                ');'
+                                                                'const helper = '
+                                                                'window.__oeAcherion;'
+                                                                'if (!shell || !helper) {'
+                                                                'emit({});'
+                                                                'return;'
+                                                                '}'
+                                                                'const rect = '
+                                                                'shell.getBoundingClientRect();'
+                                                                'const point = '
+                                                                'helper.worldPoint('
+                                                                'shell,'
+                                                                'rect.left + (rect.width / 2),'
+                                                                'rect.top + (rect.height / 2)'
+                                                                ');'
+                                                                'emit({'
+                                                                'x: Math.round(point.x),'
+                                                                'y: Math.round(point.y)'
+                                                                '});'
+                                                                '}'
+                                                            ),
+                                                        )
+                                                        item_el.on(
+                                                            'dragstart',
+                                                            lambda _e: None,
+                                                            js_handler=(
+                                                                '(e) => {'
+                                                                "e.dataTransfer.setData('text/ach-kind',"
+                                                                'e.currentTarget.dataset.kind);'
+                                                                "e.dataTransfer.effectAllowed='copy';"
+                                                                '}'
+                                                            ),
+                                                        )
+                                                        ui.icon(template.icon).classes(
+                                                            'ach-palette-item-icon '
+                                                            f'ach-node-kind-icon-'
+                                                            f'{template.flavor}'
+                                                        )
+                                                        with ui.element('div').classes(
+                                                            'min-w-0'
+                                                        ):
+                                                            with ui.row().classes(
+                                                                'items-center gap-2'
+                                                            ):
+                                                                ui.label(
+                                                                    template.label
+                                                                ).classes(
+                                                                    'ach-palette-item-name'
+                                                                )
+                                                                ui.label(
+                                                                    self._palette_badge_text(
+                                                                        template
+                                                                    )
+                                                                ).classes(
+                                                                    'ach-palette-item-pill '
+                                                                    'ach-palette-item-pill-'
+                                                                    f'{template.flavor}'
+                                                                )
+                                                            if template.tooltip:
+                                                                ui.label(
+                                                                    template.tooltip
+                                                                ).classes(
+                                                                    'ach-palette-item-desc'
+                                                                )
                                 if not rendered_any:
                                     ui.label(
                                         'No nodes match this filter.'
