@@ -607,7 +607,6 @@ class _DesignerInteractionsMixin:
                 'vp.dataset.panLastX = String(e.clientX);'
                 'vp.dataset.panLastY = String(e.clientY);'
                 'h.applyViewportTransform(vp);'
-                'h.updateConnections(stage);'
                 '}'
             ),
         )
@@ -703,7 +702,6 @@ class _DesignerInteractionsMixin:
                 'vp.dataset.panX = String((e.clientX - rect.left) - wx * ns);'
                 'vp.dataset.panY = String((e.clientY - rect.top) - wy * ns);'
                 'h.applyViewportTransform(vp);'
-                'h.updateConnections(stage);'
                 '}'
             ),
         )

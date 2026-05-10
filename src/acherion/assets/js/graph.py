@@ -3,18 +3,58 @@
 from __future__ import annotations
 
 GRAPH_JS = """
+        selectorLiteral(value) {
+            return JSON.stringify(String(value ?? '')).slice(1, -1);
+        },
+        pinLookupKey(nodeId, direction, pinIndex) {
+            return [
+                String(nodeId ?? ''),
+                String(direction ?? ''),
+                String(pinIndex ?? ''),
+            ].join('|');
+        },
+        connectionPaths(stage, nodeIds) {
+            if (!stage) return [];
+            if (nodeIds === undefined || nodeIds === null) {
+                return Array.from(stage.querySelectorAll('[data-connection-id]'));
+            }
+            if (!nodeIds.size) return [];
+            const seen = new Set();
+            const paths = [];
+            nodeIds.forEach(nodeId => {
+                const selector =
+                    '[data-source-node-id="'
+                    + this.selectorLiteral(nodeId)
+                    + '"],[data-target-node-id="'
+                    + this.selectorLiteral(nodeId)
+                    + '"]';
+                stage.querySelectorAll(selector).forEach(path => {
+                    if (seen.has(path)) return;
+                    seen.add(path);
+                    paths.push(path);
+                });
+            });
+            return paths;
+        },
         findNode(stage, nodeId) {
-            return Array.from(stage.querySelectorAll('.ach-node')).find(
-                node => node.dataset.nodeId === String(nodeId)
-            ) || null;
+            if (!stage) return null;
+            return stage.querySelector(
+                '.ach-node[data-node-id="'
+                + this.selectorLiteral(nodeId)
+                + '"]'
+            );
         },
         findPin(stage, nodeId, direction, pinIndex) {
-            return Array.from(stage.querySelectorAll('.ach-pin-anchor')).find(
-                pin =>
-                    pin.dataset.nodeId === String(nodeId) &&
-                    pin.dataset.pinDirection === String(direction) &&
-                    pin.dataset.pinIndex === String(pinIndex)
-            ) || null;
+            if (!stage) return null;
+            return stage.querySelector(
+                '.ach-pin-anchor[data-node-id="'
+                + this.selectorLiteral(nodeId)
+                + '"][data-pin-direction="'
+                + this.selectorLiteral(direction)
+                + '"][data-pin-index="'
+                + this.selectorLiteral(pinIndex)
+                + '"]'
+            );
         },
         worldPoint(viewport, clientX, clientY) {
             const stage = this.stage(viewport);
@@ -51,20 +91,74 @@ GRAPH_JS = """
             }
             return `M ${sx} ${sy} C ${c1} ${sy}, ${c2} ${ey}, ${ex} ${ey}`;
         },
+        queueConnectionUpdate(stage) {
+            if (!stage) return;
+            if (stage.__oeAcherionDirtyConnectionNodeIds === undefined) {
+                stage.__oeAcherionDirtyConnectionNodeIds = new Set();
+            }
+            const rawNodeIds = arguments.length > 1 ? arguments[1] : undefined;
+            if (rawNodeIds === undefined || rawNodeIds === null) {
+                stage.__oeAcherionDirtyConnectionNodeIds = null;
+            } else if (stage.__oeAcherionDirtyConnectionNodeIds !== null) {
+                const nextDirty = stage.__oeAcherionDirtyConnectionNodeIds;
+                const values = Array.isArray(rawNodeIds) ? rawNodeIds : [rawNodeIds];
+                values.forEach(nodeId => {
+                    const cleanId = String(nodeId || '');
+                    if (cleanId) nextDirty.add(cleanId);
+                });
+            }
+            if (stage.__oeAcherionConnectionUpdateQueued) return;
+            stage.__oeAcherionConnectionUpdateQueued = true;
+            requestAnimationFrame(() => {
+                const dirtyNodeIds = stage.__oeAcherionDirtyConnectionNodeIds;
+                stage.__oeAcherionConnectionUpdateQueued = false;
+                stage.__oeAcherionDirtyConnectionNodeIds = new Set();
+                this.updateConnections(stage, dirtyNodeIds);
+            });
+        },
         updateConnections(stage) {
             if (!stage) return;
-            stage.querySelectorAll('[data-connection-id]').forEach(path => {
+            const viewport = stage.closest('.ach-shell');
+            if (!viewport) return;
+            const sc = this.scale(viewport);
+            const stageRect = stage.getBoundingClientRect();
+            const pinCenters = new Map();
+            const rawNodeIds = arguments.length > 1 ? arguments[1] : undefined;
+            const paths = this.connectionPaths(stage, rawNodeIds);
+            if (!paths.length) return;
+            const pinCenter = (nodeId, direction, pinIndex) => {
+                const key = this.pinLookupKey(nodeId, direction, pinIndex);
+                if (pinCenters.has(key)) return pinCenters.get(key);
+                const pin = this.findPin(stage, nodeId, direction, pinIndex);
+                if (!pin) {
+                    pinCenters.set(key, null);
+                    return null;
+                }
+                const rect = pin.getBoundingClientRect();
+                const center = {
+                    x: (rect.left + rect.width / 2 - stageRect.left) / sc,
+                    y: (rect.top + rect.height / 2 - stageRect.top) / sc,
+                };
+                pinCenters.set(key, center);
+                return center;
+            };
+            paths.forEach(path => {
                 const src = path.dataset.sourceNodeId || '';
                 const tgt = path.dataset.targetNodeId || '';
                 const inIdx = parseInt(path.dataset.inputIndex || '0', 10);
                 const outIdx = parseInt(path.dataset.outputIndex || '0', 10);
-                const sourcePin = this.pinCenter(stage, src, 'out', outIdx);
-                const targetPin = this.pinCenter(stage, tgt, 'in', inIdx);
+                const sourcePin = pinCenter(src, 'out', outIdx);
+                const targetPin = pinCenter(tgt, 'in', inIdx);
                 if (!sourcePin || !targetPin) return;
-                path.setAttribute(
-                    'd',
-                    this.curve(sourcePin.x, sourcePin.y, targetPin.x, targetPin.y)
+                const nextPath = this.curve(
+                    sourcePin.x,
+                    sourcePin.y,
+                    targetPin.x,
+                    targetPin.y
                 );
+                if (path.getAttribute('d') !== nextPath) {
+                    path.setAttribute('d', nextPath);
+                }
             });
         },
         moveNode(stage, nodeId, left, top) {
@@ -73,7 +167,7 @@ GRAPH_JS = """
             const origin = this.origin(stage);
             node.style.left = `${Math.round(left + origin.x)}px`;
             node.style.top = `${Math.round(top + origin.y)}px`;
-            this.updateConnections(stage);
+            this.queueConnectionUpdate(stage, [nodeId]);
         },
         updateRubberBand(vp, x1, y1, x2, y2) {
             let rb = vp.querySelector('.ach-rubber-band');

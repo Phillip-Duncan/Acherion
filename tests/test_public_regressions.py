@@ -10,6 +10,8 @@ from acherion import (
     execute_acherion_graph,
     normalize_acherion_theme_overrides,
 )
+from acherion.assets.js.graph import GRAPH_JS
+from acherion.assets.js.viewport import VIEWPORT_JS
 from acherion.catalog import modules as _catalog_modules
 from acherion.catalog import runtime as _catalog_runtime
 from acherion.embed.designer.interactions import _DesignerInteractionsMixin
@@ -343,6 +345,22 @@ def test_sequencer_editor_uses_numeric_number_bounds(monkeypatch) -> None:
     assert isinstance(kwargs['max'], int)
     assert kwargs['step'] == 1
     assert isinstance(kwargs['step'], int)
+
+
+def test_client_js_batches_connection_updates_in_hot_paths() -> None:
+    assert (
+        "return JSON.stringify(String(value ?? '')).slice(1, -1);"
+        in GRAPH_JS
+    )
+    assert "String(pinIndex ?? '')" in GRAPH_JS
+    assert 'queueConnectionUpdate(stage)' in GRAPH_JS
+    assert 'stage.__oeAcherionConnectionUpdateQueued' in GRAPH_JS
+    assert 'connectionPaths(stage, nodeIds)' in GRAPH_JS
+    assert 'if (seen.has(path)) return;' in GRAPH_JS
+    assert 'path.className ||' not in GRAPH_JS
+    assert 'this.queueConnectionUpdate(stage, [nodeId]);' in GRAPH_JS
+    assert 'const pinCenter = (nodeId, direction, pinIndex) => {' in GRAPH_JS
+    assert 'this.queueConnectionUpdate(stage);' not in VIEWPORT_JS
 
 
 def test_plot_figure_codegen_uses_shared_go_runtime_global() -> None:

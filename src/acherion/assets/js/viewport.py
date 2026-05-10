@@ -99,7 +99,6 @@ VIEWPORT_JS = """
                 (clientY - rect.top) - (worldY * nextScale)
             );
             this.applyViewportTransform(viewport);
-            this.updateConnections(stage);
         },
         zoomViewport(viewport, factor) {
             if (!viewport) return;
