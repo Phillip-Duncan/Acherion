@@ -92,6 +92,8 @@ class _RenderPinsMixin:
 
     def _render_inline_default_editor(self: Any, node: AcherionNode) -> bool:
         """Render compact node-card editor for supported default values."""
+        if acherion_node_behaviors.render_inline_controls_for_node(self, node):
+            return True
         spec = self._inline_default_editor_spec(node)
         if spec is None:
             return False

@@ -120,6 +120,44 @@ NODE_CSS = """
 .ach-node-inline-field-text {
     width: 112px;
 }
+.ach-node-inline-preview-summary {
+    color: var(--oe-muted);
+    font-size: 11px;
+    line-height: 20px;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 0 1 auto;
+}
+.ach-node-inline-upload-hidden {
+    position: absolute !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+.ach-node-inline-upload-trigger {
+    flex: 0 0 auto;
+    min-width: 22px !important;
+    width: 22px !important;
+    height: 22px !important;
+    min-height: 22px !important;
+    padding: 0 !important;
+    border-radius: 6px !important;
+    background: var(--oe-text) !important;
+    color: var(--oe-bg) !important;
+}
+.ach-node-inline-upload-trigger .q-btn__content {
+    gap: 0 !important;
+}
+.ach-node-inline-upload-trigger .q-icon {
+    font-size: 18px !important;
+    line-height: 1 !important;
+}
 .ach-node-inline-field .q-field__bottom,
 .ach-node-inline-field .q-field__append,
 .ach-node-inline-field .q-field__prepend {

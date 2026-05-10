@@ -296,6 +296,15 @@ class AcherionNodeDefinition(ABC):
         )
         return result is not False
 
+    def render_inline_controls(
+        self,
+        owner: Any,
+        node: Any,
+    ) -> bool:
+        """Render compact inline node controls and return handled state."""
+        del owner, node
+        return False
+
     def external_events(
         self,
         owner: Any,

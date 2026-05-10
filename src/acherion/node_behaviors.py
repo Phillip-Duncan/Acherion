@@ -191,6 +191,18 @@ def inline_default_editor_spec_for_node(
     return result
 
 
+def render_inline_controls_for_node(
+    owner: Any,
+    node: AcherionNode,
+) -> bool:
+    """Delegate compact inline node controls to one registered definition."""
+    definition = _definition_for_node(node)
+    method = getattr(definition, 'render_inline_controls', None)
+    if not callable(method):
+        return False
+    return bool(method(owner, node))
+
+
 def preview_binding_for_node(
     node: AcherionNode,
 ) -> AcherionPreviewBinding | None:
@@ -249,6 +261,7 @@ __all__ = [
     'is_ui_node_kind',
     'node_type_summary',
     'output_pin_label',
+    'render_inline_controls_for_node',
     'preview_binding_for_node',
     'preview_result_reference_for_node',
     'sink_input_type_tag',
