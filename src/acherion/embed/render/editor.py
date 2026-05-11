@@ -515,15 +515,17 @@ class _RenderEditorMixin:
             return None
         entry = self._preview_reference_values.get(reference)
         if isinstance(entry, dict) and 'value' in entry:
-            return entry.get('value')
+            if set(entry) == {'value'}:
+                return entry.get('value')
+            return dict(entry)
         return entry
 
     def _node_preview_result_value(self: Any, node: AcherionNode) -> Any:
         """Return best preview value visible for one node."""
-        source_value = self._node_preview_source_value(node)
-        if source_value is not None:
-            return source_value
-        return self._node_preview_reference_value(node)
+        reference_value = self._node_preview_reference_value(node)
+        if reference_value is not None:
+            return reference_value
+        return self._node_preview_source_value(node)
 
     def _node_preview_summary(self: Any, node: AcherionNode) -> str:
         """Return compact preview summary text for one node."""
