@@ -1,4 +1,4 @@
-name: Conventional Commits
+name: Conventional PR Titles
 
 on:
   pull_request_target:
@@ -12,11 +12,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate pull request title
+      - name: Validate pull request title for squash-merge workflow
         uses: amannn/action-semantic-pull-request@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # This checks the PR title only. Use squash merge so the title
+          # becomes the commit subject on main for semantic-release.
           types: |
             feat
             fix

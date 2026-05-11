@@ -283,6 +283,20 @@ class _EmitScope:
         source_id: str,
     ) -> str:
         pin_index = self._source_pin_index(source_id)
+        if node.kind == 'for_each':
+            if pin_index == 0:
+                list_source_id = str(node.params.get('list') or '').strip()
+                source_node = self._node_index.get(
+                    self._pure_source_id(list_source_id)
+                )
+                if source_node is None or source_node.node_id == node.node_id:
+                    return 'any'
+                list_type = self._source_output_type(source_node, list_source_id)
+                item_type = _catalog_types.list_item_type_tag(list_type)
+                return item_type or 'any'
+            if pin_index == 1:
+                return 'int'
+            return 'any'
         if pin_index != 0:
             return 'any'
         if node.kind == 'constant':
@@ -313,7 +327,7 @@ class _EmitScope:
             if source_node is None or source_node.node_id == node.node_id:
                 return 'any'
             list_type = self._source_output_type(source_node, list_source_id)
-            if list_type in {'list', 'list[list]', 'np.ndarray'}:
+            if _catalog_types.is_list_like_type_tag(list_type):
                 return list_type
             return 'any'
         if node.kind == 'list_set':
@@ -324,7 +338,7 @@ class _EmitScope:
             if source_node is None or source_node.node_id == node.node_id:
                 return 'any'
             list_type = self._source_output_type(source_node, list_source_id)
-            if list_type in {'list', 'list[list]', 'np.ndarray'}:
+            if _catalog_types.is_list_like_type_tag(list_type):
                 return list_type
             return 'any'
         return _catalog_types.node_kind_to_type(node.kind)

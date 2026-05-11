@@ -465,7 +465,7 @@ class _GraphOpsPinsMixin:
                 source_type = str(
                     source_specs[source_pin_index].get('type') or 'any'
                 )
-                if source_type in {'list', 'list[list]', 'np.ndarray'}:
+                if _catalog_types.is_list_like_type_tag(source_type):
                     output_type = source_type
         return [
             {'pin_id': 'value', 'label': 'slice', 'type': output_type},
@@ -485,7 +485,7 @@ class _GraphOpsPinsMixin:
                 source_type = str(
                     source_specs[source_pin_index].get('type') or 'any'
                 )
-                if source_type in {'list', 'list[list]', 'np.ndarray'}:
+                if _catalog_types.is_list_like_type_tag(source_type):
                     output_type = source_type
         return [
             {'pin_id': 'value', 'label': 'list', 'type': output_type},

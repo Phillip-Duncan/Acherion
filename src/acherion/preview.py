@@ -27,6 +27,7 @@ class AcherionPreviewValueAdapter:
     matcher: Callable[[Any], bool]
     summary: Callable[[Any], str | None] | None = None
     type_tag: Callable[[Any], str | None] | None = None
+    render_visual: Callable[[Any, bool], bool] | None = None
 
 
 _REGISTERED_PREVIEW_VALUE_ADAPTERS: dict[str, AcherionPreviewValueAdapter] = {}
@@ -71,6 +72,16 @@ def preview_value_summary(value: Any) -> str:
         if summary:
             return summary
     return _simple_summary(value)
+
+
+def preview_value_render_visual(value: Any, *, compact: bool) -> bool:
+    """Render one adapter-owned preview visual when supported."""
+    for adapter in _registered_preview_value_adapters():
+        if not adapter.matcher(value) or adapter.render_visual is None:
+            continue
+        if adapter.render_visual(value, compact):
+            return True
+    return False
 
 
 def preview_value_plotly_payload(value: Any) -> dict[str, Any] | None:
@@ -134,6 +145,7 @@ __all__ = [
     'AcherionPreviewRunResult',
     'AcherionPreviewValueAdapter',
     'preview_value_plotly_payload',
+    'preview_value_render_visual',
     'preview_value_summary',
     'preview_value_type_tag',
     'register_preview_value_adapter',

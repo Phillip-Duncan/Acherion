@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import importlib
 import inspect
 import types
 from typing import Any
@@ -290,15 +291,33 @@ def _class_object(class_path: str) -> type | None:
         ndarray_cls = getattr(np_module, 'ndarray', None) if np_module else None
         return ndarray_cls if isinstance(ndarray_cls, type) else None
     entry = catalog_entry(class_path)
-    if entry is None or not entry.is_class:
+    if entry is not None and entry.is_class:
+        module_key = _catalog_modules.path_to_module(class_path)
+        module_obj = _catalog_modules.catalog_module_object(module_key)
+        if module_obj is not None:
+            attr_path = _catalog_modules.strip_module_prefix(module_key, class_path)
+            obj = _catalog_modules.resolve_attr_path(module_obj, attr_path)
+            if isinstance(obj, type):
+                return obj
+    return _import_class_object(class_path)
+
+
+def _import_class_object(class_path: str) -> type | None:
+    """Import one dotted class path directly when it is not cataloged."""
+    parts = tuple(part for part in str(class_path or '').split('.') if part)
+    if len(parts) < 2:
         return None
-    module_key = _catalog_modules.path_to_module(class_path)
-    module_obj = _catalog_modules.catalog_module_object(module_key)
-    if module_obj is None:
-        return None
-    attr_path = _catalog_modules.strip_module_prefix(module_key, class_path)
-    obj = _catalog_modules.resolve_attr_path(module_obj, attr_path)
-    return obj if isinstance(obj, type) else None
+    for split_index in range(len(parts) - 1, 0, -1):
+        module_path = '.'.join(parts[:split_index])
+        attr_path = '.'.join(parts[split_index:])
+        try:
+            module_obj = importlib.import_module(module_path)
+        except ImportError:
+            continue
+        obj = _catalog_modules.resolve_attr_path(module_obj, attr_path)
+        if isinstance(obj, type):
+            return obj
+    return None
 
 
 @functools.lru_cache(maxsize=256)
@@ -339,7 +358,8 @@ def _class_can_be_called_without_args(
     cls: type,
 ) -> bool:
     """Return True when instance scanning is safe to attempt for *cls*."""
-    if _catalog_modules.path_to_module(class_path) == 'builtins':
+    del class_path
+    if str(getattr(cls, '__module__', '') or '') == 'builtins':
         return False
     try:
         signature = inspect.signature(cls)

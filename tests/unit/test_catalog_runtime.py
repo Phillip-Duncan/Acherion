@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+import acherion.catalog.models as acherion_catalog_models
 import acherion.catalog.modules as acherion_catalog_modules
 import acherion.catalog.runtime as acherion_catalog_runtime
+import acherion.catalog.types as acherion_catalog_types
 import acherion.model as acherion_model
+import plotly.graph_objects as go
 
 import tests.helpers as test_helpers
 
@@ -46,6 +49,106 @@ def test_list_outputs_resolve_builtin_list_methods_for_call_method() -> None:
     methods = acherion_catalog_runtime.class_methods('list')
     assert 'append' in methods
     assert methods['append'].startswith('append(')
+
+
+def test_for_each_items_resolve_class_path_from_typed_list_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_catalog_entry(
+        path: str,
+    ) -> acherion_catalog_models.FuncEntry | None:
+        if path == 'pkg.make_widgets':
+            return acherion_catalog_models.FuncEntry(
+                path='pkg.make_widgets',
+                label='make_widgets',
+                signature='pkg.make_widgets()',
+                min_args=0,
+                max_args=0,
+                param_names=(),
+                param_types=(),
+                return_type='list[pkg.Widget]',
+                is_class=False,
+            )
+        if path == 'pkg.Widget':
+            return acherion_catalog_models.FuncEntry(
+                path='pkg.Widget',
+                label='Widget',
+                signature='pkg.Widget()',
+                min_args=0,
+                max_args=0,
+                param_names=(),
+                param_types=(),
+                return_type='pkg.Widget',
+                is_class=True,
+            )
+        return None
+
+    monkeypatch.setattr(
+        acherion_catalog_runtime,
+        'catalog_entry',
+        _fake_catalog_entry,
+    )
+
+    owner = test_helpers.CatalogPinsOwner(
+        acherion_model.AcherionGraph(
+            nodes=[
+                acherion_model.AcherionNode(
+                    node_id='widgets',
+                    kind='call_function',
+                    params={
+                        'function_path': 'pkg.make_widgets',
+                        'module': 'pkg',
+                        'arg_count': 0,
+                        'arg_sources': [],
+                    },
+                ),
+                acherion_model.AcherionNode(
+                    node_id='loop',
+                    kind='for_each',
+                    params={'list': 'widgets'},
+                ),
+            ]
+        )
+    )
+
+    assert owner._resolve_instance_class_path('loop@0') == 'pkg.Widget'
+    assert owner._output_pin_specs(owner._graph.nodes[1])[0]['type'] == (
+        'pkg.Widget'
+    )
+
+
+def test_runtime_lookup_accepts_direct_dotted_class_paths() -> None:
+    figure = go.Figure()
+    class_path = f'{type(figure).__module__}.{type(figure).__name__}'
+
+    methods = acherion_catalog_runtime.class_methods(class_path)
+    attrs = acherion_catalog_runtime.class_attributes(class_path)
+
+    assert 'update_layout' in methods
+    assert 'layout' in attrs
+
+
+def test_tuple_type_inference_only_specializes_homogeneous_members() -> None:
+    assert acherion_catalog_types.annotation_to_tag(tuple[int, int]) == (
+        'list[int]'
+    )
+    assert acherion_catalog_types.annotation_to_tag(tuple[int, str]) == 'list'
+
+
+def test_for_each_item_type_avoids_self_recursive_source_lookup() -> None:
+    owner = test_helpers.CatalogPinsOwner(
+        acherion_model.AcherionGraph(
+            nodes=[
+                acherion_model.AcherionNode(
+                    node_id='loop',
+                    kind='for_each',
+                    params={'list': 'loop@0'},
+                ),
+            ]
+        )
+    )
+
+    assert owner._output_pin_specs(owner._graph.nodes[0])[0]['type'] == 'any'
 
 
 def test_class_attributes_include_declared_fields_without_instantiation(

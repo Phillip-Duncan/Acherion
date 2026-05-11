@@ -12,7 +12,8 @@ Version bumps are determined from commit messages on `main` using
 - `fix:` and `perf:` trigger a patch release
 - `!` or `BREAKING CHANGE:` triggers the next breaking release
 - `docs:`, `refactor:`, `test:`, `chore:`, `ci:`, `style:`, and `build:` do not
-	publish a new version on their own
+	publish a new version on their own, but they can still appear in the
+	changelog when they are included in a release triggered by another commit
 
 While Acherion is still in `0.x`, the repository is configured with
 `major_on_zero = false`, so breaking changes continue to advance the minor
@@ -23,6 +24,9 @@ version instead of jumping directly to `1.0.0`.
 GitHub Actions validates pull request titles with
 `.github/workflows/conventional-pr.yml`.
 
+That workflow validates the PR title only. It does not lint every commit in the
+branch.
+
 The intended workflow is:
 
 1. open a pull request with a conventional title such as `feat: add scoped theme overrides`
@@ -31,6 +35,8 @@ The intended workflow is:
 
 Direct pushes to `main` should also use conventional commit messages, otherwise
 semantic-release may correctly decide that no release is required.
+If you use merge commits or rebase merges, the final commit subjects on `main`
+still need to be conventional or releases and changelog entries may be skipped.
 
 ## GitHub Actions workflows
 
@@ -53,6 +59,9 @@ It keeps the packaging path healthy by:
 5. checks out the released tag
 6. builds and verifies the distributions
 7. publishes them to PyPI through GitHub OIDC trusted publishing
+
+The workflow checks out the full branch history and tags before running
+semantic-release so changelog generation can see the complete commit range.
 
 This keeps version calculation, GitHub release creation, and PyPI publication in
 one pipeline instead of relying on a second workflow triggered by a release event.

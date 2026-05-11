@@ -2,7 +2,42 @@
 
 from __future__ import annotations
 
+import acherion.catalog.types as acherion_catalog_types
 import acherion.node as acherion_node
+
+
+def _for_each_item_type(owner: object, node: object) -> str:
+    params = getattr(node, 'params', None)
+    if not isinstance(params, dict):
+        return 'any'
+    list_source_id = str(params.get('list') or '').strip()
+    if not list_source_id:
+        return 'any'
+    node_by_id = getattr(owner, '_node_by_id', None)
+    pure_node_id = getattr(owner, '_pure_node_id', None)
+    source_pin_index = getattr(owner, '_source_pin_index', None)
+    output_pin_specs = getattr(owner, '_output_pin_specs', None)
+    if not all(
+        callable(method)
+        for method in (
+            node_by_id,
+            pure_node_id,
+            source_pin_index,
+            output_pin_specs,
+        )
+    ):
+        return 'any'
+    source_node = node_by_id(pure_node_id(list_source_id))
+    current_node_id = str(getattr(node, 'node_id', '') or '').strip()
+    if source_node is None or source_node.node_id == current_node_id:
+        return 'any'
+    pin_index = source_pin_index(list_source_id)
+    output_specs = output_pin_specs(source_node)
+    if pin_index >= len(output_specs):
+        return 'any'
+    list_type = str(output_specs[pin_index].get('type') or 'any')
+    item_type = acherion_catalog_types.list_item_type_tag(list_type)
+    return item_type or 'any'
 
 
 class ForEachNode(acherion_node.FlowNodeDefinition):
@@ -31,9 +66,9 @@ class ForEachNode(acherion_node.FlowNodeDefinition):
         owner: object,
         node: object,
     ) -> list[dict[str, str]] | None:
-        del owner, node
+        item_type = _for_each_item_type(owner, node)
         return [
-            acherion_node.pin('item', 'item', 'any'),
+            acherion_node.pin('item', 'item', item_type),
             acherion_node.pin('index', 'index', 'any'),
             acherion_node.pin('loop_body', 'Loop Body', 'exec'),
             acherion_node.pin('completed', 'Completed', 'exec'),

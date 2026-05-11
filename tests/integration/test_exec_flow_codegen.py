@@ -198,7 +198,7 @@ def test_exec_chain_continues_after_exec_only_call_method(
     source_code = acherion.compile_acherion_graph(graph)
 
     assert test_helpers.run_contains_call(source_code, 'Widget')
-    assert test_helpers.run_has_assigned_method_call(source_code, 'mutate')
+    assert test_helpers.run_contains_call(source_code, 'mutate')
     assert test_helpers.run_has_assigned_attribute_read(source_code, 'value')
 
 
@@ -320,4 +320,114 @@ def test_exec_chain_continues_after_exec_only_method_on_method_result(
 
     assert test_helpers.run_has_assigned_method_call(source_code, 'items')
     assert test_helpers.run_has_assigned_method_call(source_code, 'append')
+    assert test_helpers.run_has_assigned_attribute_read(source_code, 'value')
+
+
+def test_exec_chain_continues_after_exec_only_call_method_on_for_each_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_catalog_entry(
+        path: str,
+    ) -> acherion_catalog_models.FuncEntry | None:
+        if path == 'pkg.make_widgets':
+            return acherion_catalog_models.FuncEntry(
+                path='pkg.make_widgets',
+                label='make_widgets',
+                signature='pkg.make_widgets()',
+                min_args=0,
+                max_args=0,
+                param_names=(),
+                param_types=(),
+                return_type='list[pkg.Widget]',
+                is_class=False,
+            )
+        if path == 'pkg.Widget':
+            return acherion_catalog_models.FuncEntry(
+                path='pkg.Widget',
+                label='Widget',
+                signature='pkg.Widget()',
+                min_args=0,
+                max_args=0,
+                param_names=(),
+                param_types=(),
+                return_type='pkg.Widget',
+                is_class=True,
+            )
+        return None
+
+    def _fake_method_func_entry(
+        class_path: str,
+        method_name: str,
+    ) -> acherion_catalog_models.FuncEntry | None:
+        if class_path == 'pkg.Widget' and method_name == 'mutate':
+            return acherion_catalog_models.FuncEntry(
+                path='pkg.Widget.mutate',
+                label='mutate',
+                signature='mutate()',
+                min_args=0,
+                max_args=0,
+                param_names=(),
+                param_types=(),
+                return_type='',
+                is_class=False,
+            )
+        return None
+
+    monkeypatch.setattr(
+        acherion_catalog_runtime,
+        'catalog_entry',
+        _fake_catalog_entry,
+    )
+    monkeypatch.setattr(
+        acherion_catalog_runtime,
+        'method_func_entry',
+        _fake_method_func_entry,
+    )
+
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='widgets',
+                kind='call_function',
+                params={
+                    'function_path': 'pkg.make_widgets',
+                    'module': 'pkg',
+                    'arg_count': 0,
+                    'arg_sources': [],
+                    'exec_sources': ['external_event:run'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='loop',
+                kind='for_each',
+                params={
+                    'list': 'widgets',
+                    'exec_sources': ['widgets@1'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mutate',
+                kind='call_method',
+                params={
+                    'instance': 'loop@0',
+                    'method_name': 'mutate',
+                    'arg_sources': [],
+                    'exec_sources': ['loop@2'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='value',
+                kind='get_attribute',
+                params={
+                    'instance': 'loop@0',
+                    'attribute_name': 'value',
+                    'exec_sources': ['mutate@0'],
+                },
+            ),
+        ]
+    )
+
+    source_code = acherion.compile_acherion_graph(graph)
+
+    assert test_helpers.run_contains_call(source_code, 'mutate')
     assert test_helpers.run_has_assigned_attribute_read(source_code, 'value')

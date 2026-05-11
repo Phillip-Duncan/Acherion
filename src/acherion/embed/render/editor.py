@@ -22,6 +22,7 @@ from acherion.model import (
 )
 from acherion.preview import (
     preview_value_plotly_payload,
+    preview_value_render_visual,
     preview_value_summary,
     preview_value_type_tag,
 )
@@ -538,6 +539,8 @@ class _RenderEditorMixin:
         compact: bool,
     ) -> bool:
         """Render one visual preview when the runtime value supports it."""
+        if preview_value_render_visual(value, compact=compact):
+            return True
         plotly_payload = preview_value_plotly_payload(value)
         if plotly_payload is None:
             return False

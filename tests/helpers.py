@@ -163,7 +163,7 @@ def run_contains_call(source_code: str, attr_name: str) -> bool:
 
 def run_has_assigned_method_call(source_code: str, method_name: str) -> bool:
     """Return True when `run` assigns result of one method call."""
-    for stmt in run_function_def(source_code).body:
+    for stmt in ast.walk(run_function_def(source_code)):
         if not isinstance(stmt, ast.Assign):
             continue
         value = stmt.value
@@ -178,7 +178,7 @@ def run_has_assigned_method_call(source_code: str, method_name: str) -> bool:
 
 def run_has_assigned_attribute_read(source_code: str, attr_name: str) -> bool:
     """Return True when `run` assigns from one attribute access."""
-    for stmt in run_function_def(source_code).body:
+    for stmt in ast.walk(run_function_def(source_code)):
         if not isinstance(stmt, ast.Assign):
             continue
         value = stmt.value
@@ -191,7 +191,7 @@ def run_has_assigned_attribute_read(source_code: str, attr_name: str) -> bool:
 
 def run_has_attribute_write(source_code: str, attr_name: str) -> bool:
     """Return True when `run` assigns to one attribute target."""
-    for stmt in run_function_def(source_code).body:
+    for stmt in ast.walk(run_function_def(source_code)):
         if not isinstance(stmt, ast.Assign):
             continue
         for target in stmt.targets:
@@ -208,7 +208,7 @@ def run_binop_assignment_targets(
 ) -> list[str]:
     """Return assignment target names for matching binary ops in `run`."""
     targets: list[str] = []
-    for stmt in run_function_def(source_code).body:
+    for stmt in ast.walk(run_function_def(source_code)):
         if not isinstance(stmt, ast.Assign):
             continue
         value = stmt.value

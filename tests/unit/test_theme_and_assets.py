@@ -61,6 +61,12 @@ def test_plotly_preview_payload_serializes_figure_like_values() -> None:
     assert payload['layout']['template']['layout']['font']['color'] == '#E7E9EA'
 
 
+def test_preview_value_type_tag_preserves_homogeneous_list_item_types() -> None:
+    figures = [go.Figure(), go.Figure()]
+
+    assert acherion_preview.preview_value_type_tag(figures) == 'list[Figure]'
+
+
 def test_numpy_dependency_is_available_for_array_summaries() -> None:
     value = np.array([[1, 2], [3, 4]])
 
