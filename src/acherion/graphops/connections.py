@@ -33,10 +33,36 @@ class _GraphOpsConnectionsMixin:
 
     def _exec_source_ids(self: Any, node: AcherionNode) -> list[str]:
         """Return all exec sources for one node."""
-        sources = self._normalize_exec_sources(node.params.get('exec_sources'))
+        sources = [
+            self._canonical_exec_source_id(source_id)
+            for source_id in self._normalize_exec_sources(
+                node.params.get('exec_sources')
+            )
+        ]
+        sources = self._normalize_exec_sources(sources)
         node.params['exec_sources'] = list(sources)
         node.params.pop('exec_source', None)
         return list(sources)
+
+    def _canonical_exec_source_id(
+        self: Any,
+        source_id: str,
+    ) -> str:
+        """Return canonical exec source id for one stored connection."""
+        cleaned = str(source_id or '').strip()
+        if not cleaned or '@' in cleaned:
+            return cleaned
+        source_node = self._node_by_id(self._pure_node_id(cleaned))
+        if source_node is None:
+            return cleaned
+        exec_indexes = [
+            index
+            for index, pin in enumerate(self._output_pin_specs(source_node))
+            if str(pin.get('type') or '') == 'exec'
+        ]
+        if len(exec_indexes) != 1:
+            return cleaned
+        return f'{source_node.node_id}@{exec_indexes[0]}'
 
     def _set_exec_sources(
         self: Any,
@@ -44,7 +70,11 @@ class _GraphOpsConnectionsMixin:
         source_ids: list[str],
     ) -> None:
         """Persist exec-source fan-in list."""
-        normalized = self._normalize_exec_sources(source_ids)
+        normalized = [
+            self._canonical_exec_source_id(source_id)
+            for source_id in self._normalize_exec_sources(source_ids)
+        ]
+        normalized = self._normalize_exec_sources(normalized)
         node.params['exec_sources'] = list(normalized)
         node.params.pop('exec_source', None)
 

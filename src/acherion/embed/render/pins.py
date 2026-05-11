@@ -454,10 +454,7 @@ class _RenderPinsMixin:
         pin_index: int,
     ) -> str:
         """Return the stored source id for one output pin index."""
-        n_outputs = len(self._output_pin_specs(node))
-        if n_outputs > 1:
-            return f'{node.node_id}@{pin_index}'
-        return node.node_id
+        return f'{node.node_id}@{pin_index}'
 
     def _body_pin_rows(
         self: Any,

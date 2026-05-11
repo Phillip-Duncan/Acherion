@@ -95,3 +95,12 @@ output_format = "md"
 [tool.semantic_release.remote]
 name = "origin"
 type = "github"
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+testpaths = ["tests"]
+markers = [
+    "unit: isolated tests for one helper, mixin, or small behavior",
+    "integration: tests covering collaboration between Acherion subsystems",
+    "e2e: top-level workflow tests through public standalone APIs",
+]

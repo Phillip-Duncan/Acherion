@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Protocol
 
 import acherion.node_behaviors as acherion_node_behaviors
+from acherion.catalog import runtime as _catalog_runtime
+from acherion.catalog import types as _catalog_types
 
 from acherion.compiler.graph import (
     _FunctionBoxGraphView,
@@ -19,6 +21,15 @@ from acherion.model import (
     AcherionNode,
     _node_var_name,
 )
+
+
+_CONSTANT_OUTPUT_TYPE_BY_VALUE_TYPE = {
+    'number': 'float',
+    'int': 'int',
+    'text': 'str',
+    'bool': 'bool',
+    'dict': 'dict',
+}
 
 
 class _EmitNodeCallback(Protocol):
@@ -188,6 +199,15 @@ class _EmitScope:
     def _pure_source_id(self, source_id: str) -> str:
         return source_id.split('@', 1)[0] if '@' in source_id else source_id
 
+    @staticmethod
+    def _source_pin_index(source_id: str) -> int:
+        if '@' not in source_id:
+            return 0
+        try:
+            return int(source_id.split('@', 1)[1] or 0)
+        except ValueError:
+            return 0
+
     def _var_name(self, node: AcherionNode) -> str:
         index = self._original_index[node.node_id]
         return _node_var_name(index, node)
@@ -238,6 +258,123 @@ class _EmitScope:
             return True
         return not self._exec_source_ids(node)
 
+    def _call_method_return_type(
+        self,
+        node: AcherionNode,
+    ) -> str | None:
+        if node.kind != 'call_method':
+            return None
+        method_name = str(node.params.get('method_name') or '').strip()
+        if not method_name:
+            return None
+        class_path = self._resolve_instance_class_path(
+            str(node.params.get('instance') or '').strip()
+        )
+        if not class_path:
+            return None
+        entry = _catalog_runtime.method_func_entry(class_path, method_name)
+        if entry is None:
+            return None
+        return str(getattr(entry, 'return_type', '') or '').strip()
+
+    def _source_output_type(
+        self,
+        node: AcherionNode,
+        source_id: str,
+    ) -> str:
+        pin_index = self._source_pin_index(source_id)
+        if pin_index != 0:
+            return 'any'
+        if node.kind == 'constant':
+            value_type = str(node.params.get('value_type') or 'number').strip()
+            return _CONSTANT_OUTPUT_TYPE_BY_VALUE_TYPE.get(value_type, 'float')
+        if node.kind == 'call_function':
+            function_path = str(node.params.get('function_path') or '').strip()
+            entry = (
+                _catalog_runtime.catalog_entry(function_path)
+                if function_path
+                else None
+            )
+            if entry is None:
+                return 'any'
+            if bool(getattr(entry, 'is_class', False)):
+                return str(getattr(entry, 'return_type', '') or 'object')
+            return str(getattr(entry, 'return_type', '') or 'any')
+        if node.kind == 'call_method':
+            return self._call_method_return_type(node) or 'any'
+        if node.kind == 'list_index':
+            mode = str(node.params.get('mode') or 'index').strip()
+            if mode != 'slice':
+                return 'any'
+            list_source_id = str(node.params.get('source') or '').strip()
+            source_node = self._node_index.get(
+                self._pure_source_id(list_source_id)
+            )
+            if source_node is None or source_node.node_id == node.node_id:
+                return 'any'
+            list_type = self._source_output_type(source_node, list_source_id)
+            if list_type in {'list', 'list[list]', 'np.ndarray'}:
+                return list_type
+            return 'any'
+        if node.kind == 'list_set':
+            list_source_id = str(node.params.get('source') or '').strip()
+            source_node = self._node_index.get(
+                self._pure_source_id(list_source_id)
+            )
+            if source_node is None or source_node.node_id == node.node_id:
+                return 'any'
+            list_type = self._source_output_type(source_node, list_source_id)
+            if list_type in {'list', 'list[list]', 'np.ndarray'}:
+                return list_type
+            return 'any'
+        return _catalog_types.node_kind_to_type(node.kind)
+
+    def _resolve_instance_class_path(
+        self,
+        source_id: str,
+        _depth: int = 0,
+    ) -> str:
+        if not source_id or _depth > 5:
+            return ''
+        node = self._node_index.get(self._pure_source_id(source_id))
+        if node is None:
+            return ''
+        resolved_class_path = _catalog_types.runtime_class_path_for_type_tag(
+            self._source_output_type(node, source_id)
+        )
+        if resolved_class_path:
+            return resolved_class_path
+        resolved_class_path = _catalog_types.runtime_class_path_for_type_tag(
+            _catalog_types.node_kind_to_type(node.kind)
+        )
+        if resolved_class_path:
+            return resolved_class_path
+        if node.kind == 'call_function':
+            function_path = str(node.params.get('function_path') or '').strip()
+            entry = (
+                _catalog_runtime.catalog_entry(function_path)
+                if function_path
+                else None
+            )
+            if entry is not None and bool(getattr(entry, 'is_class', False)):
+                return function_path
+        if node.kind in {'call_method', 'get_attribute'}:
+            instance_source = str(node.params.get('instance') or '').strip()
+            return self._resolve_instance_class_path(
+                instance_source,
+                _depth + 1,
+            )
+        return ''
+
+    def _call_method_has_zero_data_exec_output(
+        self,
+        node: AcherionNode,
+    ) -> bool:
+        return_type = self._call_method_return_type(node)
+        if return_type is None:
+            return False
+        return not return_type
+
     def _exec_output_pins(
         self,
         node: AcherionNode,
@@ -256,9 +393,13 @@ class _EmitScope:
             return []
         if node.kind == 'function_box':
             return [(0, 'exec')]
+        has_zero_data_exec_output = (
+            acherion_node_behaviors.compiler_has_zero_data_exec_output(node)
+            or self._call_method_has_zero_data_exec_output(node)
+        )
         exec_index = (
             0
-            if acherion_node_behaviors.compiler_has_zero_data_exec_output(node)
+            if has_zero_data_exec_output
             else 1
         )
         return [(exec_index, 'exec')]
@@ -268,14 +409,6 @@ class _EmitScope:
         node: AcherionNode,
         pin_index: int,
     ) -> str:
-        # Must mirror render/pins.py: when a node has multiple output pins the
-        # render layer stores connections as node_id@pin_index for ALL indices,
-        # including 0.  Nodes with multiple exec outputs (sequencer, branch_route)
-        # start at pin 0, so plain node_id would miss those connections.
-        exec_pins = self._exec_output_pins(node)
-        multi_output = len(exec_pins) > 1 and exec_pins[0][0] == 0
-        if pin_index == 0 and not multi_output:
-            return node.node_id
         return f'{node.node_id}@{pin_index}'
 
     def _exec_successors(
@@ -283,8 +416,25 @@ class _EmitScope:
         node: AcherionNode,
         pin_index: int,
     ) -> list[AcherionNode]:
-        source_id = self._full_output_source_id(node, pin_index)
-        return list(self._exec_targets.get(source_id, []))
+        source_ids = [self._full_output_source_id(node, pin_index)]
+        if pin_index == 0:
+            # Older graphs stored pin-zero sources as plain node_id. Accept that
+            # alias while new graphs use canonical node_id@pin_index everywhere.
+            source_ids.append(node.node_id)
+        elif pin_index > 0:
+            # Mixed producer/exec nodes historically stored exec wires as plain
+            # node_id. Accept that alias for backwards compatibility.
+            source_ids.append(node.node_id)
+
+        successors: list[AcherionNode] = []
+        seen_node_ids: set[str] = set()
+        for source_id in source_ids:
+            for successor in self._exec_targets.get(source_id, []):
+                if successor.node_id in seen_node_ids:
+                    continue
+                seen_node_ids.add(successor.node_id)
+                successors.append(successor)
+        return successors
 
     def _data_source_ids(self, node: AcherionNode) -> list[str]:
         return [
