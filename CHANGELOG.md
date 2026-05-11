@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.5.1 (2026-05-11)
+
+
 ## v0.5.0 (2026-05-10)
 
 
