@@ -139,6 +139,8 @@ class AcherionDesigner(  # pyright: ignore
         self._preferences_commit_on_close: bool = False
         self._preferences_capture_shortcut_id: str | None = None
         self._preferences_dialog_body: Any = None
+        self._clipboard_snapshot: dict[str, Any] | None = None
+        self._clipboard_paste_count: int = 0
         self._css_injected: bool = False
         self._client_js_injected: bool = False
         self._client: Client | None = None  # type: ignore[assignment]

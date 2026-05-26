@@ -4,6 +4,10 @@ Provides system-node sync, node CRUD, connection management, and all
 methods that mutate the graph model. Intended to be inherited by
 AcherionDesigner only.
 """
+
+import copy
+import re
+import uuid
 from typing import Any, cast
 
 import acherion.node_behaviors as acherion_node_behaviors
@@ -74,6 +78,7 @@ class _GraphOpsMixin:
 
     _CENTER_ADD_OFFSET = 48
     _CENTER_ADD_MAX_ATTEMPTS = 64
+    _COPY_PASTE_OFFSET = _GRID_SNAP_SIZE * 2
     _STACK_GAP = _GRID_SNAP_SIZE
 
     _selected_connection_id: str | None = None
@@ -356,6 +361,396 @@ class _GraphOpsMixin:
         manual_nodes.append(new_node)
         self._rebuild_graph(manual_nodes)
         self._notify_change()
+
+    def _copy_selection_nodes(self: Any) -> list[AcherionNode]:
+        """Return manual nodes currently eligible for clipboard copy."""
+        selected_ids = set(self._selected_node_ids)
+        if not selected_ids:
+            return []
+        expanded_ids = set(selected_ids)
+        for node in self._manual_nodes():
+            if node.node_id not in selected_ids:
+                continue
+            if not self._is_function_box(node):
+                continue
+            expanded_ids.update(
+                child.node_id
+                for child in self._function_box_descendants(node.node_id)
+            )
+        return [
+            node
+            for node in self._manual_nodes()
+            if node.node_id in expanded_ids
+            and not self._is_function_entry(node)
+            and not self._is_function_input(node)
+            and not self._is_function_output(node)
+        ]
+
+    @staticmethod
+    def _copy_count_message(action: str, count: int) -> str:
+        """Return a short clipboard status message."""
+        noun = 'node' if count == 1 else 'nodes'
+        return f'{action} {count} {noun}.'
+
+    def _copy_group_snapshot(
+        self: Any,
+        nodes: list[AcherionNode],
+    ) -> dict[str, str]:
+        """Return copied group metadata keyed by original group name."""
+        snapshot: dict[str, str] = {}
+        for node in nodes:
+            group_name = str(node.params.get('group') or '').strip()
+            if not group_name or group_name in snapshot:
+                continue
+            snapshot[group_name] = str(
+                self._graph.groups.get(group_name) or self._next_group_colour()
+            )
+        return snapshot
+
+    def _copy_selection_to_clipboard(self: Any) -> tuple[bool, str]:
+        """Copy the current node selection into the designer clipboard."""
+        nodes = self._copy_selection_nodes()
+        if not nodes:
+            return (False, 'Select nodes or a function box first.')
+        self._clipboard_snapshot = {
+            'groups': self._copy_group_snapshot(nodes),
+            'nodes': [copy.deepcopy(node) for node in nodes],
+        }
+        self._clipboard_paste_count = 0
+        return (True, self._copy_count_message('Copied', len(nodes)))
+
+    def _next_group_copy_name(
+        self: Any,
+        group_name: str,
+        reserved_names: set[str],
+    ) -> str:
+        """Return a unique pasted group name derived from one group."""
+        base_name = str(group_name or '').strip() or 'Group'
+        candidate = f'{base_name} Copy'
+        suffix = 2
+        while candidate in reserved_names or candidate in self._graph.groups:
+            candidate = f'{base_name} Copy {suffix}'
+            suffix += 1
+        reserved_names.add(candidate)
+        return candidate
+
+    def _next_pasted_function_name(
+        self: Any,
+        node: AcherionNode,
+        reserved_names: set[str],
+    ) -> str:
+        """Return a unique helper name for a pasted function box."""
+        base_name = self._sanitize_identifier(
+            str(node.params.get('function_name') or node.title or node.node_id),
+            'function_box',
+        )
+        candidate = f'{base_name}_copy'
+        suffix = 2
+        while candidate in reserved_names:
+            candidate = f'{base_name}_copy_{suffix}'
+            suffix += 1
+        reserved_names.add(candidate)
+        return candidate
+
+    @staticmethod
+    def _rename_copied_function_source(
+        source_code: str,
+        function_name: str,
+    ) -> str:
+        """Rename the single top-level function defined in copied source."""
+        clean_source = str(source_code or '').rstrip()
+        clean_name = str(function_name or '').strip()
+        if not clean_source or not clean_name:
+            return clean_source
+        return re.sub(
+            r'(^\s*def\s+)[A-Za-z_][A-Za-z0-9_]*(\s*\()',
+            rf'\1{clean_name}\2',
+            clean_source,
+            count=1,
+            flags=re.M,
+        )
+
+    def _duplicate_custom_function_path(self: Any, function_path: str) -> str:
+        """Create a detached user-function entry for one pasted node."""
+        clean_path = str(function_path or '').strip()
+        if not clean_path.startswith('user.'):
+            return clean_path
+        function_name = self._next_custom_function_name()
+        new_path = f'user.{function_name}'
+        current_data = dict(
+            (self._graph.user_functions or {}).get(clean_path) or {}
+        )
+        source_code = self._rename_copied_function_source(
+            str(current_data.get('source_code') or ''),
+            function_name,
+        )
+        if not source_code:
+            source_code = self._default_custom_function_source(function_name)
+        data, _error = self._parse_custom_function_source(source_code)
+        if data is None:
+            data = {
+                'label': function_name,
+                'signature': f'{function_name}()',
+                'min_args': 0,
+                'max_args': 0,
+                'param_names': [],
+                'param_types': [],
+                'return_type': 'any',
+                'source_code': source_code.rstrip() + '\n',
+            }
+        self._graph.user_functions[new_path] = data
+        return new_path
+
+    def _remap_copied_source_id(
+        self: Any,
+        source_id: str,
+        node_id_map: dict[str, str],
+    ) -> str:
+        """Return the pasted source id for one copied connection."""
+        clean_source_id = str(source_id or '').strip()
+        if not clean_source_id:
+            return ''
+        pure_node_id = self._pure_node_id(clean_source_id)
+        mapped_node_id = node_id_map.get(pure_node_id)
+        if mapped_node_id is None:
+            return ''
+        if '@' not in clean_source_id:
+            return mapped_node_id
+        return f'{mapped_node_id}@{clean_source_id.split("@", 1)[1]}'
+
+    def _remap_copied_node_params(
+        self: Any,
+        node: AcherionNode,
+        node_id_map: dict[str, str],
+    ) -> None:
+        """Rewrite internal source references on one pasted node clone."""
+        exec_sources = [
+            self._remap_copied_source_id(source_id, node_id_map)
+            for source_id in list(node.params.get('exec_sources') or [])
+        ]
+        node.params['exec_sources'] = [
+            source_id for source_id in exec_sources if source_id
+        ]
+
+        if 'arg_sources' in node.params:
+            node.params['arg_sources'] = [
+                self._remap_copied_source_id(source_id, node_id_map)
+                for source_id in list(node.params.get('arg_sources') or [])
+            ]
+
+        if 'named_sources' in node.params:
+            node.params['named_sources'] = {
+                param_name: mapped_source_id
+                for param_name, source_id in dict(
+                    node.params.get('named_sources') or {}
+                ).items()
+                for mapped_source_id in [
+                    self._remap_copied_source_id(source_id, node_id_map)
+                ]
+                if mapped_source_id
+            }
+
+        if 'box_input_sources' in node.params:
+            node.params['box_input_sources'] = {
+                input_node_id: mapped_source_id
+                for input_node_id, source_id in dict(
+                    node.params.get('box_input_sources') or {}
+                ).items()
+                for mapped_source_id in [
+                    self._remap_copied_source_id(source_id, node_id_map)
+                ]
+                if mapped_source_id
+            }
+
+        definition = get_acherion_node_definition(node.kind)
+        if definition is None:
+            return
+        for param_id in definition.source_param_ids(node):
+            node.params[param_id] = self._remap_copied_source_id(
+                str(node.params.get(param_id) or ''),
+                node_id_map,
+            )
+
+    def _next_pasted_node_id(self: Any, existing_ids: set[str]) -> str:
+        """Return a unique node id for one pasted node."""
+        while True:
+            node_id = uuid.uuid4().hex[:8]
+            if node_id in existing_ids:
+                continue
+            existing_ids.add(node_id)
+            return node_id
+
+    def _pasted_selection_offset(
+        self: Any,
+        copied_nodes: list[AcherionNode],
+        *,
+        anchor_x: int | None,
+        anchor_y: int | None,
+    ) -> tuple[int, int]:
+        """Return world-space paste offset for copied nodes."""
+        if anchor_x is None or anchor_y is None:
+            offset = self._COPY_PASTE_OFFSET * (self._clipboard_paste_count + 1)
+            return (offset, offset)
+        snapped_anchor_x, snapped_anchor_y = self._snap_grid_point(
+            anchor_x,
+            anchor_y,
+        )
+        min_left = min(self._node_world_left(node) for node in copied_nodes)
+        min_top = min(self._node_world_top(node) for node in copied_nodes)
+        return (
+            snapped_anchor_x - min_left,
+            snapped_anchor_y - min_top,
+        )
+
+    def _anchor_pasted_parent_function(
+        self: Any,
+        node: AcherionNode,
+        *,
+        left: int,
+        top: int,
+    ) -> str:
+        """Return target parent function for one cursor-anchored paste."""
+        if self._is_function_box(node):
+            return ''
+        center_x = left + max(1, self._node_width(node) // 2)
+        center_y = top + max(1, self._node_height(node) // 2)
+        return self._containing_function_box_id(center_x, center_y)
+
+    def _paste_copied_nodes(
+        self: Any,
+        *,
+        anchor_x: int | None = None,
+        anchor_y: int | None = None,
+    ) -> tuple[bool, str]:
+        """Paste the current clipboard nodes with rewritten references."""
+        snapshot = dict(self._clipboard_snapshot or {})
+        copied_nodes = [
+            copy.deepcopy(node)
+            for node in list(snapshot.get('nodes') or [])
+            if isinstance(node, AcherionNode)
+        ]
+        if not copied_nodes:
+            return (False, 'Copy nodes first.')
+
+        offset_x, offset_y = self._pasted_selection_offset(
+            copied_nodes,
+            anchor_x=anchor_x,
+            anchor_y=anchor_y,
+        )
+        node_id_map: dict[str, str] = {}
+        existing_ids = {node.node_id for node in self._graph.nodes}
+        for node in copied_nodes:
+            node_id_map[node.node_id] = self._next_pasted_node_id(existing_ids)
+        for node in copied_nodes:
+            if not self._is_function_box(node):
+                continue
+            node_id_map[self._function_entry_node_id(node.node_id)] = (
+                self._function_entry_node_id(node_id_map[node.node_id])
+            )
+
+        reserved_group_names = set(self._graph.groups)
+        group_name_map: dict[str, str] = {}
+        for group_name, colour in dict(snapshot.get('groups') or {}).items():
+            pasted_group_name = self._next_group_copy_name(
+                group_name,
+                reserved_group_names,
+            )
+            group_name_map[str(group_name)] = pasted_group_name
+            self._graph.groups[pasted_group_name] = str(
+                colour or self._next_group_colour()
+            )
+
+        reserved_function_names = {
+            str(node.params.get('function_name') or '').strip()
+            for node in self._manual_nodes()
+            if self._is_function_box(node)
+        }
+        pasted_nodes: list[AcherionNode] = []
+        for original_node in copied_nodes:
+            pasted_node = copy.deepcopy(original_node)
+            pasted_node.node_id = node_id_map[original_node.node_id]
+            pasted_node.params = copy.deepcopy(pasted_node.params)
+            left = self._node_world_left(original_node) + offset_x
+            top = self._node_world_top(original_node) + offset_y
+            pasted_left, pasted_top = self._snap_grid_point(left, top)
+            pasted_node.params['x'] = pasted_left
+            pasted_node.params['y'] = pasted_top
+            pasted_node.params['dock'] = 'free'
+            pasted_node.params['manual_position'] = True
+
+            parent_function_id = str(
+                original_node.params.get('parent_function') or ''
+            ).strip()
+            if parent_function_id:
+                mapped_parent_id = node_id_map.get(parent_function_id, '')
+                if mapped_parent_id:
+                    pasted_node.params['parent_function'] = mapped_parent_id
+                elif anchor_x is None or anchor_y is None:
+                    pasted_node.params['parent_function'] = parent_function_id
+                else:
+                    anchored_parent_id = self._anchor_pasted_parent_function(
+                        pasted_node,
+                        left=pasted_left,
+                        top=pasted_top,
+                    )
+                    if anchored_parent_id:
+                        pasted_node.params['parent_function'] = (
+                            anchored_parent_id
+                        )
+                    else:
+                        pasted_node.params.pop('parent_function', None)
+            else:
+                if anchor_x is None or anchor_y is None:
+                    pasted_node.params.pop('parent_function', None)
+                else:
+                    anchored_parent_id = self._anchor_pasted_parent_function(
+                        pasted_node,
+                        left=pasted_left,
+                        top=pasted_top,
+                    )
+                    if anchored_parent_id:
+                        pasted_node.params['parent_function'] = (
+                            anchored_parent_id
+                        )
+                    else:
+                        pasted_node.params.pop('parent_function', None)
+
+            group_name = str(original_node.params.get('group') or '').strip()
+            if group_name in group_name_map:
+                pasted_node.params['group'] = group_name_map[group_name]
+            else:
+                pasted_node.params.pop('group', None)
+
+            if self._is_function_box(pasted_node):
+                pasted_node.params['function_name'] = (
+                    self._next_pasted_function_name(
+                        original_node,
+                        reserved_function_names,
+                    )
+                )
+
+            if pasted_node.kind == 'custom_function':
+                new_path = self._duplicate_custom_function_path(
+                    str(original_node.params.get('function_path') or ''),
+                )
+                pasted_node.params['function_path'] = new_path
+                pasted_node.params['module'] = self._function_path_to_module(
+                    new_path
+                )
+
+            self._remap_copied_node_params(pasted_node, node_id_map)
+            pasted_nodes.append(pasted_node)
+
+        manual_nodes = self._manual_nodes()
+        manual_nodes.extend(pasted_nodes)
+        self._rebuild_graph(manual_nodes)
+        self._selected_connection_id = None
+        self._selected_node_ids = {
+            node.node_id for node in pasted_nodes
+        }
+        self._clipboard_paste_count += 1
+        self._notify_change()
+        return (True, self._copy_count_message('Pasted', len(pasted_nodes)))
 
     def _move_node(self: Any, node_id: str, direction: int) -> None:
         manual_nodes = self._manual_nodes()

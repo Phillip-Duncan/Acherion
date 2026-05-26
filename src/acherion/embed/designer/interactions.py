@@ -447,6 +447,27 @@ class _DesignerInteractionsMixin:
         args = dict(event.args or {})
         shortcut_id = str(args.get('shortcut_id') or '')
         key = str(args.get('key') or '')
+        raw_anchor_x = args.get('anchor_x')
+        raw_anchor_y = args.get('anchor_y')
+        anchor_x = None if raw_anchor_x in (None, '') else int(raw_anchor_x)
+        anchor_y = None if raw_anchor_y in (None, '') else int(raw_anchor_y)
+        if shortcut_id == 'copy_selection':
+            ok, message = self._copy_selection_to_clipboard()
+            self._notify_ui(
+                message,
+                type='positive' if ok else 'warning',
+            )
+            return
+        if shortcut_id == 'paste_selection':
+            ok, message = self._paste_copied_nodes(
+                anchor_x=anchor_x,
+                anchor_y=anchor_y,
+            )
+            self._notify_ui(
+                message,
+                type='positive' if ok else 'warning',
+            )
+            return
         if shortcut_id == 'delete_selection_primary':
             if self._selected_node_ids:
                 to_delete = set(self._selected_node_ids)
@@ -471,11 +492,13 @@ class _DesignerInteractionsMixin:
             lambda _e: None,
             js_handler=(
                 '(e) => {'
+                'const vp = e.currentTarget;'
+                'vp.dataset.cursorClientX = String(e.clientX);'
+                'vp.dataset.cursorClientY = String(e.clientY);'
                 'if (e.button !== 0) return;'
                 'if (e.target.closest(".ach-node")) return;'
                 'if (e.target.closest(".ach-link-hitbox")) return;'
                 'if (e.target.closest(".ach-palette-shell")) return;'
-                'const vp = e.currentTarget;'
                 'const h = window.__oeAcherion;'
                 'if (h && h.matchesShortcut(e, "box_select_add", "drag")) {'
                 'h.ensureViewportState(vp);'
@@ -510,6 +533,8 @@ class _DesignerInteractionsMixin:
             js_handler=(
                 '(e) => {'
                 'const vp = e.currentTarget;'
+                'vp.dataset.cursorClientX = String(e.clientX);'
+                'vp.dataset.cursorClientY = String(e.clientY);'
                 'const h = window.__oeAcherion;'
                 'if (h) h.ensureViewportState(vp);'
                 'const cid = vp.dataset.dragCandidateNodeId || "";'
@@ -783,15 +808,33 @@ class _DesignerInteractionsMixin:
                 'const tag = (e.target.tagName || "").toUpperCase();'
                 'if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"'
                 ' || e.target.isContentEditable) return;'
+                'const vp = e.currentTarget.closest(".ach-shell");'
                 'let shortcutId = "";'
                 'if (h.matchesShortcut(e, "delete_selection_primary", "keyboard")) {'
                 'shortcutId = "delete_selection_primary";'
+                '} else if (h.matchesShortcut(e, "copy_selection", "keyboard")) {'
+                'shortcutId = "copy_selection";'
+                '} else if (h.matchesShortcut(e, "paste_selection", "keyboard")) {'
+                'shortcutId = "paste_selection";'
                 '} else if (h.matchesShortcut(e, "clear_selection", "keyboard")) {'
                 'shortcutId = "clear_selection";'
                 '}'
                 'if (!shortcutId) return;'
+                'let anchorX = null;'
+                'let anchorY = null;'
+                'if (shortcutId === "paste_selection" && vp) {'
+                'h.ensureViewportState(vp);'
+                'const rawClientX = parseFloat(vp.dataset.cursorClientX || "");'
+                'const rawClientY = parseFloat(vp.dataset.cursorClientY || "");'
+                'if (Number.isFinite(rawClientX) && Number.isFinite(rawClientY)) {'
+                'const pt = h.worldPoint(vp, rawClientX, rawClientY);'
+                'const snapped = h.snapPoint(vp, pt.x, pt.y);'
+                'anchorX = Math.round(snapped.x);'
+                'anchorY = Math.round(snapped.y);'
+                '}'
+                '}'
                 'e.preventDefault(); e.stopPropagation();'
-                'emit({shortcut_id: shortcutId, key:e.key});'
+                'emit({shortcut_id: shortcutId, key:e.key, anchor_x: anchorX, anchor_y: anchorY});'
                 '}'
             ),
         )

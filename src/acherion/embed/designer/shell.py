@@ -554,6 +554,8 @@ class _DesignerShellMixin:
                     self._render_toolbar_menu(
                         'Edit',
                         [
+                            ('Copy Selection', self._copy_current_selection),
+                            ('Paste', self._paste_current_selection),
                             ('Clear Selection', self._clear_selection),
                             ('Delete Selection', self._delete_current_selection),
                         ],
@@ -635,6 +637,20 @@ class _DesignerShellMixin:
         self.refresh()
         self._update_hint()
 
+    def _copy_current_selection(self: Any) -> None:
+        ok, message = self._copy_selection_to_clipboard()
+        self._notify_ui(
+            message,
+            type='positive' if ok else 'warning',
+        )
+
+    def _paste_current_selection(self: Any) -> None:
+        ok, message = self._paste_copied_nodes()
+        self._notify_ui(
+            message,
+            type='positive' if ok else 'warning',
+        )
+
     def _delete_current_selection(self: Any) -> None:
         if self._selected_node_ids:
             to_delete = set(self._selected_node_ids)
@@ -676,6 +692,10 @@ class _DesignerShellMixin:
             'node selection. '
             f'{self._shortcut_display_binding("box_select")} starts box '
             'selection. '
+            f'{self._shortcut_display_binding("copy_selection")} copies '
+            'selected nodes. '
+            f'{self._shortcut_display_binding("paste_selection")} pastes '
+            'them. '
             f'{self._shortcut_display_binding("delete_selection_primary")} '
             'deletes selected nodes or connections. '
             f'{self._shortcut_display_binding("clear_selection")} clears '
@@ -761,7 +781,10 @@ class _DesignerShellMixin:
                     f'{count} node{"s" if count > 1 else ""} selected. '
                     f'{self._shortcut_display_binding("toggle_selection")} '
                     'toggles selection. Drag any selected node to move '
-                    'group. Right-click for group options. '
+                    f'group. {self._shortcut_display_binding("copy_selection")} '
+                    'copies it. '
+                    f'{self._shortcut_display_binding("paste_selection")} '
+                    'pastes it. Right-click for group options. '
                     f'{self._shortcut_display_binding("delete_selection_primary")} '
                     'removes selection. '
                     f'{self._shortcut_display_binding("clear_selection")} '
