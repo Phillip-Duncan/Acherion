@@ -316,3 +316,67 @@ def test_paste_at_cursor_rehomes_copied_inner_nodes() -> None:
     assert pasted_node.params.get('parent_function') in (None, '')
     assert int(pasted_node.params['x']) == 520
     assert int(pasted_node.params['y']) == 400
+
+
+def test_copy_paste_custom_function_uses_copied_source_snapshot() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='fn1',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.custom_function_1',
+                    'module': 'user',
+                    'arg_count': 0,
+                    'arg_sources': [],
+                    'exec_sources': [],
+                    'x': 0,
+                    'y': 0,
+                },
+            ),
+        ],
+        user_functions={
+            'user.custom_function_1': {
+                'label': 'custom_function_1',
+                'signature': 'custom_function_1()',
+                'min_args': 0,
+                'max_args': 0,
+                'param_names': [],
+                'param_types': [],
+                'return_type': 'any',
+                'source_code': (
+                    'def custom_function_1():\n'
+                    '    return 1\n'
+                ),
+            }
+        },
+    )
+    owner = _CopyPasteOwner(graph)
+    owner._selected_node_ids = {'fn1'}
+
+    copied, copy_message = owner._copy_selection_to_clipboard()
+
+    assert copied is True
+    assert copy_message == 'Copied 1 node.'
+
+    owner._graph.user_functions['user.custom_function_1']['source_code'] = (
+        'def custom_function_1():\n'
+        '    return 99\n'
+    )
+
+    pasted, paste_message = owner._paste_copied_nodes()
+
+    assert pasted is True
+    assert paste_message == 'Pasted 1 node.'
+
+    pasted_node = next(
+        node
+        for node in owner._manual_nodes()
+        if node.node_id in owner._selected_node_ids
+    )
+    pasted_path = str(pasted_node.params['function_path'])
+    pasted_source = str(owner._graph.user_functions[pasted_path]['source_code'])
+
+    assert pasted_path != 'user.custom_function_1'
+    assert 'return 1' in pasted_source
+    assert 'return 99' not in pasted_source

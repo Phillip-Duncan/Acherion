@@ -108,6 +108,7 @@ class _DesignerInteractionsMixin:
             else:
                 self._selected_node_ids = new_sel
             self._notify_change()
+            self._focus_canvas_shortcuts()
             return
 
         node_id = str(args.get('node_id') or self._drag_node_id or '')
@@ -171,6 +172,7 @@ class _DesignerInteractionsMixin:
             else:
                 self._selected_node_ids.add(node_id)
             self._notify_change()
+            self._focus_canvas_shortcuts()
             return
 
         node = self._node_by_id(node_id)
@@ -181,10 +183,12 @@ class _DesignerInteractionsMixin:
             group_ids == self._selected_node_ids
             and self._selected_connection_id is None
         ):
+            self._focus_canvas_shortcuts()
             return
         self._selected_connection_id = None
         self._selected_node_ids = group_ids
         self._notify_change()
+        self._focus_canvas_shortcuts()
 
     def _selection_ids_for_node(self: Any, node: AcherionNode) -> set[str]:
         group_name = str(node.params.get('group') or '').strip()
@@ -303,6 +307,7 @@ class _DesignerInteractionsMixin:
             return
         name = self._next_default_group_name()
         self._create_group(name, node_ids)
+        self._focus_canvas_shortcuts()
         self._notify_ui(f'Created group {name}.', type='positive')
 
     def _open_rename_group_dialog(self: Any) -> None:
@@ -365,12 +370,14 @@ class _DesignerInteractionsMixin:
         node_ids = set(self._selected_node_ids)
         self._ctx_dismiss()
         self._add_nodes_to_group(name, node_ids)
+        self._focus_canvas_shortcuts()
 
     def _ctx_remove_from_group(self: Any) -> None:
         """Remove selected nodes from their group."""
         node_ids = set(self._selected_node_ids)
         self._ctx_dismiss()
         self._remove_nodes_from_group(node_ids)
+        self._focus_canvas_shortcuts()
 
     def _ctx_apply_layout_command(self: Any, command: str) -> None:
         """Apply one alignment/distribution command from the context menu."""
@@ -437,11 +444,13 @@ class _DesignerInteractionsMixin:
                 spec = None
             if isinstance(spec, dict):
                 self._add_variable_node_at_position(spec, x, y)
+                self._focus_canvas_shortcuts()
                 return
         kind = str(args.get('kind') or '')
         if not is_acherion_manual_add_kind(kind):
             return
         self._add_node_at_position(kind, x, y)
+        self._focus_canvas_shortcuts()
 
     def _handle_canvas_key(self: Any, event: Any) -> None:
         args = dict(event.args or {})

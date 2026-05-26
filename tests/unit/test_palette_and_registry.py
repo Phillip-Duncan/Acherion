@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 import acherion.embed.designer.interactions as acherion_designer_interactions
+import acherion.embed.designer.shell as acherion_designer_shell
 import acherion.embed.render.nodes as acherion_render_nodes
 import acherion.preferences as acherion_preferences
 import acherion.registry as acherion_registry
@@ -105,11 +108,147 @@ def test_copy_and_paste_shortcuts_use_graph_clipboard() -> None:
     ]
 
 
+def test_selecting_node_refocuses_canvas_shortcuts() -> None:
+    class _StubDesigner(acherion_designer_interactions._DesignerInteractionsMixin):
+        def __init__(self) -> None:
+            self._graph = type('Graph', (), {'nodes': [type('Node', (), {
+                'node_id': 'n1',
+                'params': {},
+            })()]})()
+            self._selected_node_ids: set[str] = set()
+            self._selected_connection_id = None
+            self.focus_calls = 0
+            self.change_calls = 0
+
+        def _node_by_id(self, node_id: str) -> Any:
+            for node in self._graph.nodes:
+                if node.node_id == node_id:
+                    return node
+            return None
+
+        def _selection_ids_for_node(self, node: Any) -> set[str]:
+            return {node.node_id}
+
+        def _notify_change(self) -> None:
+            self.change_calls += 1
+
+        def _focus_canvas_shortcuts(self) -> None:
+            self.focus_calls += 1
+
+    designer = _StubDesigner()
+
+    class _Event:
+        args = {'node_id': 'n1', 'toggle': False}
+
+    designer._toggle_node_selection(_Event())
+
+    assert designer._selected_node_ids == {'n1'}
+    assert designer.change_calls == 1
+    assert designer.focus_calls == 1
+
+
+def test_grouping_selection_refocuses_canvas_shortcuts() -> None:
+    class _StubDesigner(acherion_designer_interactions._DesignerInteractionsMixin):
+        def __init__(self) -> None:
+            self._selected_node_ids = {'n1', 'n2'}
+            self.focus_calls = 0
+            self.dismiss_calls = 0
+            self.group_calls: list[tuple[str, set[str]]] = []
+
+        def _ctx_dismiss(self) -> None:
+            self.dismiss_calls += 1
+
+        def _add_nodes_to_group(self, name: str, node_ids: set[str]) -> None:
+            self.group_calls.append((name, set(node_ids)))
+
+        def _focus_canvas_shortcuts(self) -> None:
+            self.focus_calls += 1
+
+    designer = _StubDesigner()
+
+    designer._ctx_add_to_group('Group 1')
+
+    assert designer.dismiss_calls == 1
+    assert designer.group_calls == [('Group 1', {'n1', 'n2'})]
+    assert designer.focus_calls == 1
+
+
+def test_creating_group_refocuses_canvas_shortcuts() -> None:
+    class _StubDesigner(acherion_designer_interactions._DesignerInteractionsMixin):
+        def __init__(self) -> None:
+            self._selected_node_ids = {'n1', 'n2'}
+            self.focus_calls = 0
+            self.dismiss_calls = 0
+            self.create_calls: list[tuple[str, set[str]]] = []
+            self.notifications: list[tuple[str, str]] = []
+
+        def _ctx_dismiss(self) -> None:
+            self.dismiss_calls += 1
+
+        def _next_default_group_name(self) -> str:
+            return 'Group 1'
+
+        def _create_group(self, name: str, node_ids: set[str]) -> None:
+            self.create_calls.append((name, set(node_ids)))
+
+        def _focus_canvas_shortcuts(self) -> None:
+            self.focus_calls += 1
+
+        def _notify_ui(self, message: str, *, type: str = 'info') -> None:
+            self.notifications.append((message, type))
+
+    designer = _StubDesigner()
+
+    designer._open_new_group_dialog()
+
+    assert designer.dismiss_calls == 1
+    assert designer.create_calls == [('Group 1', {'n1', 'n2'})]
+    assert designer.focus_calls == 1
+    assert designer.notifications == [('Created group Group 1.', 'positive')]
+
+
 def test_default_preferences_include_copy_and_paste_shortcuts() -> None:
     defaults = acherion_preferences.default_preferences_dict()
 
     assert defaults['keyboard_shortcuts']['copy_selection'] == 'Ctrl+C'
     assert defaults['keyboard_shortcuts']['paste_selection'] == 'Ctrl+V'
+
+
+def test_menu_paste_uses_viewport_cursor_anchor() -> None:
+    class _StubClient:
+        async def run_javascript(
+            self,
+            _code: str,
+            timeout: float = 0.0,
+        ) -> dict[str, int]:
+            assert timeout == 3.0
+            return {'anchor_x': 420, 'anchor_y': 240}
+
+    class _StubDesigner(acherion_designer_shell._DesignerShellMixin):
+        def __init__(self) -> None:
+            self._client = _StubClient()
+            self._viewport_dom_id = 'ach-shell-test'
+            self.paste_anchor: tuple[int | None, int | None] | None = None
+            self.notifications: list[tuple[str, str]] = []
+
+        def _paste_copied_nodes(
+            self,
+            *,
+            anchor_x: int | None = None,
+            anchor_y: int | None = None,
+        ) -> tuple[bool, str]:
+            self.paste_anchor = (anchor_x, anchor_y)
+            return (True, 'Pasted 1 node.')
+
+        def _notify_ui(self, message: str, *, type: str = 'info') -> None:
+            self.notifications.append((message, type))
+
+    designer = _StubDesigner()
+
+    asyncio.run(designer._paste_current_selection())
+
+    assert designer.paste_anchor == (420, 240)
+    assert designer.notifications == [('Pasted 1 node.', 'positive')]
 
 
 def test_palette_taxonomy_groups_like_nodes_together() -> None:

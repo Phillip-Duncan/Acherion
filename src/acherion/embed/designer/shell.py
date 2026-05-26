@@ -459,7 +459,7 @@ class _DesignerShellMixin:
     def _render_toolbar_menu(
         self: Any,
         label: str,
-        items: list[tuple[str, Callable[[], None]]],
+        items: list[tuple[str, Callable[[], Any]]],
     ) -> None:
         label_token = label.lower().replace(' ', '-')
         button_dom_id = f'{self._frame_dom_id}-{label_token}-button'
@@ -629,6 +629,18 @@ class _DesignerShellMixin:
             f'}})()'
         )
 
+    def _focus_canvas_shortcuts(self: Any) -> None:
+        """Return keyboard shortcut focus to the graph canvas."""
+        canvas_id = self._canvas_dom_id
+        self._run_client_javascript(
+            f'(function(){{'
+            f'const canvas=document.getElementById({canvas_id!r});'
+            f'if(!canvas)return;'
+            f'requestAnimationFrame(() => canvas.focus());'
+            f'setTimeout(() => canvas.focus(), 50);'
+            f'}})()'
+        )
+
     def _clear_selection(self: Any) -> None:
         if not self._selected_node_ids and self._selected_connection_id is None:
             return
@@ -644,8 +656,57 @@ class _DesignerShellMixin:
             type='positive' if ok else 'warning',
         )
 
-    def _paste_current_selection(self: Any) -> None:
-        ok, message = self._paste_copied_nodes()
+    async def _current_viewport_paste_anchor(
+        self: Any,
+    ) -> tuple[int | None, int | None]:
+        """Return current snapped viewport cursor anchor for paste."""
+        client = cast('Client | None', getattr(self, '_client', None))
+        if client is None:
+            try:
+                client = ui.context.client
+            except RuntimeError:
+                return (None, None)
+            self._client = client
+        result = await client.run_javascript(
+            '(() => {'
+            f'const vp = document.getElementById({self._viewport_dom_id!r});'
+            'const h = window.__oeAcherion;'
+            'if (!vp || !h) return {anchor_x: null, anchor_y: null};'
+            'h.ensureViewportState(vp);'
+            'const rawClientX = parseFloat(vp.dataset.cursorClientX || "");'
+            'const rawClientY = parseFloat(vp.dataset.cursorClientY || "");'
+            'if (!Number.isFinite(rawClientX) || !Number.isFinite(rawClientY)) {'
+            '  return {anchor_x: null, anchor_y: null};'
+            '}'
+            'const pt = h.worldPoint(vp, rawClientX, rawClientY);'
+            'const snapped = h.snapPoint(vp, pt.x, pt.y);'
+            'return {'
+            '  anchor_x: Math.round(snapped.x),'
+            '  anchor_y: Math.round(snapped.y),'
+            '};'
+            '})()',
+            timeout=3.0,
+        )
+        if not isinstance(result, dict):
+            return (None, None)
+        raw_anchor_x = result.get('anchor_x')
+        raw_anchor_y = result.get('anchor_y')
+        try:
+            anchor_x = None if raw_anchor_x in (None, '') else int(raw_anchor_x)
+        except (TypeError, ValueError):
+            anchor_x = None
+        try:
+            anchor_y = None if raw_anchor_y in (None, '') else int(raw_anchor_y)
+        except (TypeError, ValueError):
+            anchor_y = None
+        return (anchor_x, anchor_y)
+
+    async def _paste_current_selection(self: Any) -> None:
+        anchor_x, anchor_y = await self._current_viewport_paste_anchor()
+        ok, message = self._paste_copied_nodes(
+            anchor_x=anchor_x,
+            anchor_y=anchor_y,
+        )
         self._notify_ui(
             message,
             type='positive' if ok else 'warning',

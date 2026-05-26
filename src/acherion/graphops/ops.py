@@ -407,6 +407,25 @@ class _GraphOpsMixin:
             )
         return snapshot
 
+    def _copy_user_function_snapshot(
+        self: Any,
+        nodes: list[AcherionNode],
+    ) -> dict[str, dict[str, Any]]:
+        """Return copied custom-function definitions keyed by function path."""
+        snapshot: dict[str, dict[str, Any]] = {}
+        for node in nodes:
+            if node.kind != 'custom_function':
+                continue
+            function_path = str(node.params.get('function_path') or '').strip()
+            if not function_path.startswith('user.'):
+                continue
+            if function_path in snapshot:
+                continue
+            snapshot[function_path] = copy.deepcopy(
+                dict((self._graph.user_functions or {}).get(function_path) or {})
+            )
+        return snapshot
+
     def _copy_selection_to_clipboard(self: Any) -> tuple[bool, str]:
         """Copy the current node selection into the designer clipboard."""
         nodes = self._copy_selection_nodes()
@@ -415,6 +434,7 @@ class _GraphOpsMixin:
         self._clipboard_snapshot = {
             'groups': self._copy_group_snapshot(nodes),
             'nodes': [copy.deepcopy(node) for node in nodes],
+            'user_functions': self._copy_user_function_snapshot(nodes),
         }
         self._clipboard_paste_count = 0
         return (True, self._copy_count_message('Copied', len(nodes)))
@@ -470,7 +490,11 @@ class _GraphOpsMixin:
             flags=re.M,
         )
 
-    def _duplicate_custom_function_path(self: Any, function_path: str) -> str:
+    def _duplicate_custom_function_path(
+        self: Any,
+        function_path: str,
+        copied_user_functions: dict[str, dict[str, Any]],
+    ) -> str:
         """Create a detached user-function entry for one pasted node."""
         clean_path = str(function_path or '').strip()
         if not clean_path.startswith('user.'):
@@ -478,7 +502,9 @@ class _GraphOpsMixin:
         function_name = self._next_custom_function_name()
         new_path = f'user.{function_name}'
         current_data = dict(
-            (self._graph.user_functions or {}).get(clean_path) or {}
+            copied_user_functions.get(clean_path)
+            or (self._graph.user_functions or {}).get(clean_path)
+            or {}
         )
         source_code = self._rename_copied_function_source(
             str(current_data.get('source_code') or ''),
@@ -629,6 +655,11 @@ class _GraphOpsMixin:
             for node in list(snapshot.get('nodes') or [])
             if isinstance(node, AcherionNode)
         ]
+        copied_user_functions = {
+            str(path): copy.deepcopy(dict(data))
+            for path, data in dict(snapshot.get('user_functions') or {}).items()
+            if isinstance(path, str) and isinstance(data, dict)
+        }
         if not copied_nodes:
             return (False, 'Copy nodes first.')
 
@@ -732,6 +763,7 @@ class _GraphOpsMixin:
             if pasted_node.kind == 'custom_function':
                 new_path = self._duplicate_custom_function_path(
                     str(original_node.params.get('function_path') or ''),
+                    copied_user_functions,
                 )
                 pasted_node.params['function_path'] = new_path
                 pasted_node.params['module'] = self._function_path_to_module(
