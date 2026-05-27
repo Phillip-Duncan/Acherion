@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.7.1 (2026-05-27)
+
+### Bug Fixes
+
+- **release**: Guard changelog generation and backfill v0.7.0
+  ([`1cc109b`](https://github.com/Phillip-Duncan/Acherion/commit/1cc109b7673659f8035cd280ce5de88e72efe4e3))
+
+
 ## v0.7.0 (2026-05-27)
 
 ### Bug Fixes
