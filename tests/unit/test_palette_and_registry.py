@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -132,18 +133,24 @@ def test_copy_and_paste_shortcuts_use_graph_clipboard() -> None:
 
 
 def test_selecting_node_refocuses_canvas_shortcuts() -> None:
+    class _Node:
+        def __init__(self, node_id: str) -> None:
+            self.node_id = node_id
+            self.params: dict[str, Any] = {}
+
+    class _Graph:
+        def __init__(self) -> None:
+            self.nodes = [_Node('n1')]
+
     class _StubDesigner(acherion_designer_interactions._DesignerInteractionsMixin):
         def __init__(self) -> None:
-            self._graph = type('Graph', (), {'nodes': [type('Node', (), {
-                'node_id': 'n1',
-                'params': {},
-            })()]})()
+            self._graph = _Graph()
             self._selected_node_ids: set[str] = set()
             self._selected_connection_id = None
             self.focus_calls = 0
             self.change_calls = 0
 
-        def _node_by_id(self, node_id: str) -> Any:
+        def _node_by_id(self, node_id: str | None) -> Any:
             for node in self._graph.nodes:
                 if node.node_id == node_id:
                     return node
@@ -274,8 +281,8 @@ def test_shell_history_undo_and_redo_restore_graph_state() -> None:
         def refresh(self) -> None:
             return
 
-        def _update_hint(self, text: str | None = None) -> None:
-            self._hint_text = str(text or '')
+        def _update_hint(self, message: str | None = None) -> None:
+            self._hint_text = str(message or '')
 
         def _focus_canvas_shortcuts(self) -> None:
             return
@@ -307,6 +314,44 @@ def test_shell_history_undo_and_redo_restore_graph_state() -> None:
     assert redone is True
     assert redo_message == 'Redid graph change.'
     assert [node.node_id for node in designer._graph.nodes] == ['n1', 'n2']
+
+
+def test_help_topics_filter_matches_fuzzy_query() -> None:
+    class _StubDesigner(acherion_designer_shell._DesignerShellMixin):
+        def __init__(self) -> None:
+            self._help_search_query = 'wire'
+
+    designer = _StubDesigner()
+
+    topics = designer._filtered_help_topics()
+
+    assert topics
+    assert str(topics[0].get('id') or '') == 'wiring'
+
+
+def test_help_topics_filter_returns_all_when_query_empty() -> None:
+    class _StubDesigner(acherion_designer_shell._DesignerShellMixin):
+        def __init__(self) -> None:
+            self._help_search_query = ''
+
+    designer = _StubDesigner()
+
+    topics = designer._filtered_help_topics()
+
+    assert len(topics) >= 5
+
+
+def test_help_topics_filter_matches_article_content() -> None:
+    class _StubDesigner(acherion_designer_shell._DesignerShellMixin):
+        def __init__(self) -> None:
+            self._help_search_query = 'transient preview'
+
+    designer = _StubDesigner()
+
+    topics = designer._filtered_help_topics()
+
+    assert topics
+    assert str(topics[0].get('id') or '') == 'copy_paste'
 
 
 def test_menu_paste_uses_viewport_cursor_anchor() -> None:

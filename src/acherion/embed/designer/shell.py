@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
+import re
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 from nicegui import background_tasks, ui
@@ -36,6 +38,83 @@ class _DesignerShellMixin:
     """Public API, build, refresh, and notification helpers."""
 
     _GRAPH_HISTORY_LIMIT = 120
+
+
+    _HELP_TOPICS: tuple[dict[str, Any], ...] = (
+        {
+            'id': 'getting_started',
+            'title': 'Getting Started',
+            'icon': 'rocket_launch',
+            'keywords': ('start', 'basics', 'overview', 'first graph'),
+            'content': (
+                '## Getting Started\n\n'
+                '1. Drag nodes from the left palette into the canvas.\n'
+                '2. Click an output pin, then an input pin, to wire values.\n'
+                '3. Use Compile to generate code, then Validate to check it.\n'
+                '4. Save your graph state through your host integration.\n'
+            ),
+        },
+        {
+            'id': 'selection_and_groups',
+            'title': 'Selection and Groups',
+            'icon': 'select_all',
+            'keywords': ('selection', 'group', 'box select', 'multi-select'),
+            'content': (
+                '## Selection and Groups\n\n'
+                '- Use click to select one node or grouped nodes.\n'
+                '- Use box selection shortcuts to select many nodes quickly.\n'
+                '- Right-click selected nodes for grouping and layout actions.\n'
+                '- Drag one selected node to move the whole selected set.\n'
+            ),
+        },
+        {
+            'id': 'copy_paste',
+            'title': 'Controls',
+            'icon': 'content_copy',
+            'keywords': (
+                'controls',
+                'copy',
+                'paste',
+                'undo',
+                'redo',
+                'clipboard',
+            ),
+            'content': (
+                '## Controls\n\n'
+                '- Copy uses the local graph clipboard.\n'
+                '- Paste places copied nodes near cursor position.\n'
+                '- Undo reverses the latest graph mutation.\n'
+                '- Redo reapplies the latest undone mutation.\n'
+                '- History tracks graph changes, not transient preview results.\n'
+            ),
+        },
+        {
+            'id': 'wiring',
+            'title': 'Wiring and Flow',
+            'icon': 'timeline',
+            'keywords': ('wire', 'connection', 'exec', 'flow', 'pins'),
+            'content': (
+                '## Wiring and Flow\n\n'
+                '- Data pins carry values between nodes.\n'
+                '- Exec wires define execution order.\n'
+                '- Select a connection to delete or inspect it.\n'
+                '- Keep flows linear first, then branch intentionally.\n'
+            ),
+        },
+        {
+            'id': 'function_boxes',
+            'title': 'Function Boxes',
+            'icon': 'category',
+            'keywords': ('function box', 'composite', 'extract', 'nested'),
+            'content': (
+                '## Function Boxes\n\n'
+                '- Function boxes encapsulate reusable graph logic.\n'
+                '- Extract selected nodes to create a new function box.\n'
+                '- Nodes can be re-homed when moved across function regions.\n'
+                '- Copying a function box includes its descendants.\n'
+            ),
+        },
+    )
 
     _graph: AcherionGraph
     _drag_node_id: str | None = None
@@ -656,8 +735,7 @@ class _DesignerShellMixin:
                         'File',
                         [
                             ('Preferences', self._open_preferences_dialog),
-                            ('Compile to Code', self._apply_to_code),
-                            ('Refresh Canvas', self.refresh),
+                            ('Help', self._open_help_dialog),
                         ],
                     )
                     self._render_toolbar_menu(
@@ -682,20 +760,6 @@ class _DesignerShellMixin:
                     self._render_toolbar_menu(
                         'Window',
                         [('Toggle Full Screen', self._toggle_full_screen)],
-                    )
-                    self._render_toolbar_menu(
-                        'Tools',
-                        [
-                            ('Center on Graph', self._center_on_graph),
-                            ('Sync Viewport', self._sync_client_viewport),
-                        ],
-                    )
-                    self._render_toolbar_menu(
-                        'Help',
-                        [
-                            ('Show Shortcuts', self._show_shortcuts_help),
-                            ('Show Wiring Tips', self._show_wiring_help),
-                        ],
                     )
                     ui.element('div').classes('ach-menubar-separator')
                     self._mode_toggle_btn = ui.button(
@@ -857,9 +921,6 @@ class _DesignerShellMixin:
     def _reset_view(self: Any) -> None:
         self._run_viewport_command('h.resetViewport(vp);')
 
-    def _center_on_graph(self: Any) -> None:
-        self._run_viewport_command('h.centerGraph(vp);')
-
     def _toggle_full_screen(self: Any) -> None:
         frame_id = self._frame_dom_id
         self._run_client_javascript(
@@ -871,34 +932,221 @@ class _DesignerShellMixin:
             f'}})()'
         )
 
-    def _show_shortcuts_help(self: Any) -> None:
-        self._notify_ui(
-            'Shortcuts: '
-            f'{self._shortcut_display_binding("toggle_selection")} toggles '
-            'node selection. '
-            f'{self._shortcut_display_binding("box_select")} starts box '
-            'selection. '
-            f'{self._shortcut_display_binding("copy_selection")} copies '
-            'selected nodes. '
-            f'{self._shortcut_display_binding("paste_selection")} pastes '
-            'them. '
-            f'{self._shortcut_display_binding("undo_selection")} undoes '
-            'the latest graph change. '
-            f'{self._shortcut_display_binding("redo_selection")} redoes '
-            'the latest graph change. '
-            f'{self._shortcut_display_binding("delete_selection_primary")} '
-            'deletes selected nodes or connections. '
-            f'{self._shortcut_display_binding("clear_selection")} clears '
-            'selection.',
-            type='info',
+    def _help_topic_by_id(self: Any, topic_id: str) -> dict[str, Any] | None:
+        """Return one help topic definition by stable id."""
+        clean_id = str(topic_id or '').strip()
+        for topic in self._HELP_TOPICS:
+            if str(topic.get('id') or '') == clean_id:
+                return topic
+        return None
+
+    def _help_topic_score(self: Any, topic: dict[str, Any], query: str) -> float:
+        """Return fuzzy relevance score for one topic against query."""
+        clean_query = str(query or '').strip().casefold()
+        if not clean_query:
+            return 0.0
+        title = str(topic.get('title') or '')
+        title_folded = title.casefold()
+        keywords = tuple(topic.get('keywords') or ())
+        keyword_text = ' '.join(str(value) for value in keywords).casefold()
+        content_text = str(topic.get('content') or '').casefold()
+        if clean_query in title_folded:
+            return 4.0
+        if clean_query in keyword_text:
+            return 3.0
+        if clean_query in content_text:
+            return 2.8
+        title_ratio = difflib.SequenceMatcher(
+            None,
+            clean_query,
+            title_folded,
+        ).ratio()
+        keyword_ratio = difflib.SequenceMatcher(
+            None,
+            clean_query,
+            keyword_text,
+        ).ratio()
+        content_ratio = max(
+            (
+                difflib.SequenceMatcher(
+                    None,
+                    clean_query,
+                    line.strip().casefold(),
+                ).ratio()
+                for line in content_text.splitlines()
+                if line.strip()
+            ),
+            default=0.0,
+        )
+        return max(
+            title_ratio * 2.0,
+            keyword_ratio * 1.5,
+            content_ratio * 1.35,
         )
 
-    def _show_wiring_help(self: Any) -> None:
-        self._notify_ui(
-            'Click an output pin, then an input pin to connect. White exec '
-            'wires control order. Coloured pins carry data values.',
-            type='info',
+    @staticmethod
+    def _highlight_help_content(content: str, query: str) -> str:
+        """Return article markdown with fuzzy query tokens highlighted."""
+        highlighted = str(content or '')
+        tokens = [
+            token
+            for token in re.split(r'\s+', str(query or '').strip())
+            if len(token) >= 2
+        ]
+        for token in sorted(set(tokens), key=len, reverse=True):
+            highlighted = re.sub(
+                re.escape(token),
+                lambda match: f'<mark>{match.group(0)}</mark>',
+                highlighted,
+                flags=re.IGNORECASE,
+            )
+        return highlighted
+
+    def _filtered_help_topics(self: Any) -> list[dict[str, Any]]:
+        """Return help topics matching current fuzzy query."""
+        query = str(self._help_search_query or '').strip()
+        if not query:
+            return [dict(topic) for topic in self._HELP_TOPICS]
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for topic in self._HELP_TOPICS:
+            score = self._help_topic_score(topic, query)
+            if score >= 0.55:
+                scored.append((score, dict(topic)))
+        scored.sort(
+            key=lambda item: (
+                item[0],
+                str(item[1].get('title') or '').casefold(),
+            ),
+            reverse=True,
         )
+        return [topic for _score, topic in scored]
+
+    def _render_help_dialog_body(self: Any) -> None:
+        """Render or rerender help dialog nav and article content."""
+        if self._help_topics_container is None or self._help_content_container is None:
+            return
+        topics = self._filtered_help_topics()
+        active_topic = self._help_topic_by_id(self._help_active_topic)
+        if active_topic is None and topics:
+            active_topic = topics[0]
+            self._help_active_topic = str(active_topic.get('id') or '')
+
+        self._help_topics_container.clear()
+        with self._help_topics_container:
+            if not topics:
+                ui.label('No help topics found.').classes(
+                    'ach-preferences-empty'
+                )
+            for topic in topics:
+                topic_id = str(topic.get('id') or '')
+                classes = 'ach-preferences-nav-item'
+                if topic_id == self._help_active_topic:
+                    classes += ' ach-preferences-nav-item-active'
+                ui.button(
+                    str(topic.get('title') or ''),
+                    icon=str(topic.get('icon') or 'help_outline'),
+                    on_click=lambda _event, tid=topic_id: (
+                        setattr(self, '_help_active_topic', tid),
+                        self._render_help_dialog_body(),
+                    ),
+                ).props('flat no-caps align=left').classes(classes)
+
+        self._help_content_container.clear()
+        with self._help_content_container:
+            if active_topic is None:
+                ui.label('Select a topic to view help.').classes(
+                    'ach-preferences-empty'
+                )
+            else:
+                with ui.element('div').classes('ach-help-article'):
+                    ui.markdown(
+                        self._highlight_help_content(
+                            str(active_topic.get('content') or ''),
+                            self._help_search_query,
+                        )
+                    )
+
+    def _rerender_help_dialog(self: Any) -> None:
+        """Rerender help dialog while preserving search-box focus."""
+        if self._help_topics_container is None or self._help_content_container is None:
+            return
+        self._render_help_dialog_body()
+
+    def _open_help_dialog(self: Any) -> None:
+        """Open searchable help dialog with topic/article split layout."""
+        if self._overlay_host_el is None:
+            return
+        self._help_search_query = ''
+        self._help_active_topic = 'getting_started'
+
+        with self._overlay_host_el:
+            dialog = ui.dialog()
+            dialog.on(
+                'hide',
+                lambda _event: (
+                    setattr(self, '_help_topics_container', None),
+                    setattr(self, '_help_content_container', None),
+                ),
+            )
+            with dialog, ui.card().classes('ach-preferences-dialog-card'):
+                with ui.element('div').classes('ach-preferences-dialog-shell'):
+                    with ui.element('div').classes('ach-preferences-toolbar'):
+                        ui.label('Help').classes('ach-preferences-dialog-title')
+                        ui.button(
+                            icon='close',
+                            on_click=dialog.close,
+                        ).props('flat round color=white').classes(
+                            'ach-preferences-close'
+                        )
+                    body_container = ui.element('div').classes(
+                        'ach-preferences-dialog-body'
+                    )
+                    with body_container:
+                        with ui.element('div').classes('ach-preferences-body'):
+                            with ui.element('div').classes('ach-preferences-sidebar'):
+                                with ui.element('div').classes(
+                                    'ach-preferences-sidebar-search'
+                                ):
+                                    search_input = ui.input(
+                                        value=self._help_search_query,
+                                        placeholder='Search help',
+                                    ).props('outlined dense clearable').classes(
+                                        'w-full ach-pill-search-input '
+                                        'ach-preferences-search-input'
+                                    ).props(
+                                        f'id={self._frame_dom_id}-help-search'
+                                    )
+                                    with search_input.add_slot('prepend'):
+                                        ui.icon('search').classes(
+                                            'ach-pill-search-icon'
+                                        )
+                                    search_input.on(
+                                        'update:model-value',
+                                        lambda event: (
+                                            setattr(
+                                                self,
+                                                '_help_search_query',
+                                                str(event.args or ''),
+                                            ),
+                                            self._rerender_help_dialog(),
+                                        ),
+                                    )
+                                self._help_topics_container = ui.element('div').classes(
+                                    'ach-preferences-sidebar-nav'
+                                )
+                            with ui.element('div').classes('ach-preferences-main'):
+                                self._help_content_container = ui.element('div').classes(
+                                    'ach-preferences-content'
+                                )
+                    self._render_help_dialog_body()
+                    with ui.element('div').classes('ach-preferences-footer'):
+                        ui.button(
+                            'Close',
+                            on_click=dialog.close,
+                        ).props('flat no-caps').classes(
+                            'ach-preferences-close-text'
+                        )
+        dialog.open()
 
     def _notify_ui(
         self: Any,

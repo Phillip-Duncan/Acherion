@@ -241,6 +241,7 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
     overflow: hidden;
 }
 .ach-preferences-dialog-shell {
+    --ach-dialog-pane-gutter: 20px;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -268,7 +269,7 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
 .ach-preferences-search-row {
     flex: 0 0 auto;
     width: 100%;
-    padding: 14px 20px 0;
+    padding: 14px var(--ach-dialog-pane-gutter) 0;
     box-sizing: border-box;
 }
 .ach-preferences-search-input {
@@ -292,7 +293,7 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
-    padding: 0 20px 0;
+    padding: 0;
     box-sizing: border-box;
 }
 .ach-preferences-body {
@@ -311,10 +312,22 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
     gap: 6px;
     width: 248px;
     min-width: 248px;
-    padding: 14px 12px 16px;
+    padding: 14px var(--ach-dialog-pane-gutter) 16px;
     border-right: 1px solid var(--oe-border);
     background: color-mix(in srgb, var(--oe-bg) 78%, transparent);
     box-sizing: border-box;
+}
+.ach-preferences-sidebar-search {
+    width: 100%;
+    padding: 0 0 8px;
+    box-sizing: border-box;
+}
+.ach-preferences-sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
 }
 .ach-preferences-main {
     display: flex;
@@ -331,6 +344,7 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
     padding: 0 12px;
     border-radius: 10px;
     color: var(--oe-text);
+    box-sizing: border-box;
 }
 .ach-preferences-nav-item .q-btn__content {
     justify-content: flex-start;
@@ -360,7 +374,17 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
     width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
-    padding: 18px 20px;
+    padding: 14px var(--ach-dialog-pane-gutter) 16px;
+    box-sizing: border-box;
+}
+.ach-help-article {
+    width: 100%;
+}
+.ach-help-article > :first-child {
+    margin-top: 0 !important;
+}
+.ach-preferences-content > * {
+    width: 100%;
     box-sizing: border-box;
 }
 .ach-preferences-section-head {

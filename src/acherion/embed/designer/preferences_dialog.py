@@ -57,9 +57,12 @@ class _DesignerPreferencesDialogMixin:
 
     def _rerender_preferences_dialog(self: Any) -> None:
         """Refresh preferences dialog body after local draft changes."""
-        if self._preferences_dialog_body is None:
+        if (
+            self._preferences_nav_container is None
+            or self._preferences_content_container is None
+        ):
             return
-        self._render_preferences_dialog_body(self._preferences_dialog_body)
+        self._render_preferences_dialog_body()
         capture_id = self._preferences_capture_shortcut_id
         if capture_id:
             self._run_client_javascript(
@@ -70,22 +73,6 @@ class _DesignerPreferencesDialogMixin:
                 '})();'
             )
             return
-        if not self._preferences_search_query:
-            return
-        self._run_client_javascript(
-            '(() => {'
-            f'const el = document.getElementById({f"{self._frame_dom_id}-pref-search"!r});'
-            'if (!el) return;'
-            'requestAnimationFrame(() => {'
-            'el.focus();'
-            'const input = el.querySelector("input");'
-            'if (input && typeof input.setSelectionRange === "function") {'
-            'const end = input.value.length;'
-            'input.setSelectionRange(end, end);'
-            '}'
-            '});'
-            '})();'
-        )
 
     def _cancel_preferences_dialog(self: Any) -> None:
         """Close preferences dialog and revert unsaved preview changes."""
@@ -107,7 +94,8 @@ class _DesignerPreferencesDialogMixin:
             self._revert_preferences_preview()
         self._preferences_commit_on_close = False
         self._preferences_dialog = None
-        self._preferences_dialog_body = None
+        self._preferences_nav_container = None
+        self._preferences_content_container = None
 
     def _save_preferences_dialog(self: Any) -> None:
         """Persist current draft preferences and close the dialog."""
@@ -471,69 +459,47 @@ class _DesignerPreferencesDialogMixin:
                         ):
                             self._render_shortcut_capture_box(definition)
 
-    def _render_preferences_dialog_body(self: Any, container: Any) -> None:
-        """Render or rerender preferences dialog body content."""
+    def _render_preferences_dialog_body(self: Any) -> None:
+        """Render or rerender preferences dialog nav and content."""
+        if (
+            self._preferences_nav_container is None
+            or self._preferences_content_container is None
+        ):
+            return
         categories = (
             ('Appearance', 'palette'),
             ('Keyboard Shortcuts', 'keyboard_command_key'),
         )
-        container.clear()
-        with container:
-            with ui.element('div').classes('ach-preferences-body'):
-                with ui.element('div').classes('ach-preferences-sidebar'):
-                    for category_label, icon_name in categories:
-                        classes = 'ach-preferences-nav-item'
-                        if category_label == self._preferences_active_category:
-                            classes += ' ach-preferences-nav-item-active'
-                        ui.button(
-                            category_label,
-                            icon=icon_name,
-                            on_click=lambda _event, category=category_label: (
-                                setattr(
-                                    self,
-                                    '_preferences_active_category',
-                                    category,
-                                ),
-                                setattr(
-                                    self,
-                                    '_preferences_capture_shortcut_id',
-                                    None,
-                                ),
-                                self._render_preferences_dialog_body(container),
-                            ),
-                        ).props('flat no-caps align=left').classes(classes)
-                with ui.element('div').classes('ach-preferences-main'):
-                    with ui.element('div').classes('ach-preferences-search-row'):
-                        search_input = ui.input(
-                            value=self._preferences_search_query,
-                            placeholder='Search',
-                        ).props('outlined dense clearable').classes(
-                            'w-full ach-pill-search-input '
-                            'ach-preferences-search-input'
-                        ).props(f'id={self._frame_dom_id}-pref-search')
-                        with search_input.add_slot('prepend'):
-                            ui.icon('search').classes('ach-pill-search-icon')
-                        search_input.on(
-                            'update:model-value',
-                            lambda event: (
-                                setattr(
-                                    self,
-                                    '_preferences_search_query',
-                                    str(event.args or ''),
-                                ),
-                                setattr(
-                                    self,
-                                    '_preferences_capture_shortcut_id',
-                                    None,
-                                ),
-                                self._rerender_preferences_dialog(),
-                            ),
-                        )
-                    with ui.element('div').classes('ach-preferences-content'):
-                        if self._preferences_active_category == 'Appearance':
-                            self._render_preferences_appearance_panel()
-                        else:
-                            self._render_preferences_shortcuts_panel()
+        self._preferences_nav_container.clear()
+        with self._preferences_nav_container:
+            for category_label, icon_name in categories:
+                classes = 'ach-preferences-nav-item'
+                if category_label == self._preferences_active_category:
+                    classes += ' ach-preferences-nav-item-active'
+                ui.button(
+                    category_label,
+                    icon=icon_name,
+                    on_click=lambda _event, category=category_label: (
+                        setattr(
+                            self,
+                            '_preferences_active_category',
+                            category,
+                        ),
+                        setattr(
+                            self,
+                            '_preferences_capture_shortcut_id',
+                            None,
+                        ),
+                        self._render_preferences_dialog_body(),
+                    ),
+                ).props('flat no-caps align=left').classes(classes)
+
+        self._preferences_content_container.clear()
+        with self._preferences_content_container:
+            if self._preferences_active_category == 'Appearance':
+                self._render_preferences_appearance_panel()
+            else:
+                self._render_preferences_shortcuts_panel()
 
     def _open_preferences_dialog(self: Any) -> None:
         """Open the editor preferences dialog."""
@@ -570,8 +536,49 @@ class _DesignerPreferencesDialogMixin:
                     body_container = ui.element('div').classes(
                         'ach-preferences-dialog-body'
                     )
-                    self._preferences_dialog_body = body_container
-                    self._render_preferences_dialog_body(body_container)
+                    with body_container:
+                        with ui.element('div').classes('ach-preferences-body'):
+                            with ui.element('div').classes('ach-preferences-sidebar'):
+                                self._preferences_nav_container = ui.element(
+                                    'div'
+                                ).classes('ach-preferences-sidebar-nav')
+                            with ui.element('div').classes('ach-preferences-main'):
+                                with ui.element('div').classes(
+                                    'ach-preferences-search-row'
+                                ):
+                                    search_input = ui.input(
+                                        value=self._preferences_search_query,
+                                        placeholder='Search',
+                                    ).props('outlined dense clearable').classes(
+                                        'w-full ach-pill-search-input '
+                                        'ach-preferences-search-input'
+                                    ).props(
+                                        f'id={self._frame_dom_id}-pref-search'
+                                    )
+                                    with search_input.add_slot('prepend'):
+                                        ui.icon('search').classes(
+                                            'ach-pill-search-icon'
+                                        )
+                                    search_input.on(
+                                        'update:model-value',
+                                        lambda event: (
+                                            setattr(
+                                                self,
+                                                '_preferences_search_query',
+                                                str(event.args or ''),
+                                            ),
+                                            setattr(
+                                                self,
+                                                '_preferences_capture_shortcut_id',
+                                                None,
+                                            ),
+                                            self._rerender_preferences_dialog(),
+                                        ),
+                                    )
+                                self._preferences_content_container = ui.element(
+                                    'div'
+                                ).classes('ach-preferences-content')
+                    self._render_preferences_dialog_body()
                     with ui.element('div').classes('ach-preferences-footer'):
                         ui.button(
                             'Cancel',

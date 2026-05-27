@@ -139,7 +139,12 @@ class AcherionDesigner(  # pyright: ignore
         self._preferences_saved_snapshot = self._preferences_state.to_dict()
         self._preferences_commit_on_close: bool = False
         self._preferences_capture_shortcut_id: str | None = None
-        self._preferences_dialog_body: Any = None
+        self._preferences_nav_container: Any = None
+        self._preferences_content_container: Any = None
+        self._help_topics_container: Any = None
+        self._help_content_container: Any = None
+        self._help_search_query: str = ''
+        self._help_active_topic: str = 'getting_started'
         self._clipboard_snapshot: dict[str, Any] | None = None
         self._clipboard_paste_count: int = 0
         initial_graph_data = _graph_to_dict(self._graph)
