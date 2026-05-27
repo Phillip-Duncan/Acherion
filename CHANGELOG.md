@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.6.0 (2026-05-27)
+
+### Bug Fixes
+
+- Tighten copy/paste behavior and usability
+  ([`8ef0ea3`](https://github.com/Phillip-Duncan/Acherion/commit/8ef0ea351e25bcf28a1a4b05ab98619c90f97da5))
+
+### Features
+
+- Add node copy/paste with cursor-aware paste
+  ([`e2efd92`](https://github.com/Phillip-Duncan/Acherion/commit/e2efd92f14097d38a607d407494575b825f3d3a6))
+
+
 ## v0.5.3 (2026-05-11)
 
 
