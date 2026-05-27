@@ -477,6 +477,20 @@ class _DesignerInteractionsMixin:
                 type='positive' if ok else 'warning',
             )
             return
+        if shortcut_id == 'undo_selection':
+            ok, message = self._undo_graph_change()
+            self._notify_ui(
+                message,
+                type='positive' if ok else 'warning',
+            )
+            return
+        if shortcut_id == 'redo_selection':
+            ok, message = self._redo_graph_change()
+            self._notify_ui(
+                message,
+                type='positive' if ok else 'warning',
+            )
+            return
         if shortcut_id == 'delete_selection_primary':
             if self._selected_node_ids:
                 to_delete = set(self._selected_node_ids)
@@ -825,6 +839,10 @@ class _DesignerInteractionsMixin:
                 'shortcutId = "copy_selection";'
                 '} else if (h.matchesShortcut(e, "paste_selection", "keyboard")) {'
                 'shortcutId = "paste_selection";'
+                '} else if (h.matchesShortcut(e, "undo_selection", "keyboard")) {'
+                'shortcutId = "undo_selection";'
+                '} else if (h.matchesShortcut(e, "redo_selection", "keyboard")) {'
+                'shortcutId = "redo_selection";'
                 '} else if (h.matchesShortcut(e, "clear_selection", "keyboard")) {'
                 'shortcutId = "clear_selection";'
                 '}'

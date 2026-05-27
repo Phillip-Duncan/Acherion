@@ -6,20 +6,50 @@ All notable changes to this project will be documented in this file.
 
 ## v0.5.3 (2026-05-11)
 
+### Bug Fixes
+
+- Preserve structured preview references
+  ([`31f1359`](https://github.com/Phillip-Duncan/Acherion/commit/31f1359))
+
 
 ## v0.5.2 (2026-05-11)
+
+### Bug Fixes
+
+- Propagate loop item object types through runtime state
+  ([`517855a`](https://github.com/Phillip-Duncan/Acherion/commit/517855a))
 
 
 ## v0.5.1 (2026-05-11)
 
+### Bug Fixes
+
+- Preserve exec flow for canonical source ids in compiler output
+  ([`9a435f4`](https://github.com/Phillip-Duncan/Acherion/commit/9a435f4))
+
 
 ## v0.5.0 (2026-05-10)
+
+### Features
+
+- Add inline node control extension hooks
+  ([`a319a8f`](https://github.com/Phillip-Duncan/Acherion/commit/a319a8f))
 
 
 ## v0.4.0 (2026-05-10)
 
+### Features
+
+- Add collection nodes and palette tree
+  ([`33bdc10`](https://github.com/Phillip-Duncan/Acherion/commit/33bdc10))
+
 
 ## v0.3.1 (2026-05-10)
+
+### Performance Improvements
+
+- Optimize graph wire updates during drag and zoom
+  ([`177351e`](https://github.com/Phillip-Duncan/Acherion/commit/177351e))
 
 
 ## v0.3.0 (2026-05-09)
@@ -31,6 +61,11 @@ All notable changes to this project will be documented in this file.
 
 
 ## v0.2.2 (2026-05-09)
+
+### Bug Fixes
+
+- Stabilize preview execution and custom function behavior
+  ([`4376c49`](https://github.com/Phillip-Duncan/Acherion/commit/4376c49))
 
 
 ## v0.2.1 (2026-05-09)

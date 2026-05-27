@@ -38,6 +38,7 @@ from acherion.graphops.pins import _GraphOpsPinsMixin
 from acherion.graphops.ops import _GraphOpsMixin
 from acherion.model import (
     AcherionGraph,
+    _graph_to_dict,
 )
 from acherion.embed.render.editor import (
     _RenderEditorMixin,
@@ -141,6 +142,21 @@ class AcherionDesigner(  # pyright: ignore
         self._preferences_dialog_body: Any = None
         self._clipboard_snapshot: dict[str, Any] | None = None
         self._clipboard_paste_count: int = 0
+        initial_graph_data = _graph_to_dict(self._graph)
+        self._history_undo: list[dict[str, Any]] = [
+            {
+                'graph': initial_graph_data,
+                'selected_node_ids': [],
+                'selected_connection_id': None,
+            }
+        ]
+        self._history_redo: list[dict[str, Any]] = []
+        self._history_last_graph_token: str = json.dumps(
+            initial_graph_data,
+            sort_keys=True,
+            separators=(',', ':'),
+        )
+        self._history_suspended: bool = False
         self._css_injected: bool = False
         self._client_js_injected: bool = False
         self._client: Client | None = None  # type: ignore[assignment]

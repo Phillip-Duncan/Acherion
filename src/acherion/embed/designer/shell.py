@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 from nicegui import background_tasks, ui
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
 
 class _DesignerShellMixin:
     """Public API, build, refresh, and notification helpers."""
+
+    _GRAPH_HISTORY_LIMIT = 120
 
     _graph: AcherionGraph
     _drag_node_id: str | None = None
@@ -77,6 +80,7 @@ class _DesignerShellMixin:
         """Replace graph state from persisted builder_state data."""
         self._graph = _graph_from_dict(data)
         self._normalize_graph()
+        self._reset_graph_history()
         self.clear_preview_results()
         self.force_redraw()
 
@@ -202,6 +206,7 @@ class _DesignerShellMixin:
         self._ensure_css()
         self._ensure_client_js()
         self._normalize_graph()
+        self._reset_graph_history()
         with ui.element('div').classes(
             'ach-workbench oe-surface rounded-lg w-full min-w-0'
         ).props(f'id={self._frame_dom_id}'):
@@ -452,9 +457,113 @@ class _DesignerShellMixin:
     def _notify_change(self: Any) -> None:
         self._clear_preview_runtime_state()
         self.refresh()
+        self._record_graph_history_state()
         self._update_hint()
         if self._on_change is not None:
             self._on_change()
+
+    def _graph_history_state(self: Any) -> dict[str, Any]:
+        """Return one history entry for current graph and selection state."""
+        selected_connection_id = self._selected_connection_id
+        if selected_connection_id is not None:
+            selected_connection_id = str(selected_connection_id)
+        return {
+            'graph': _graph_to_dict(self._graph),
+            'selected_node_ids': sorted(self._selected_node_ids),
+            'selected_connection_id': selected_connection_id,
+        }
+
+    @staticmethod
+    def _graph_history_token(graph_data: dict[str, Any]) -> str:
+        """Return one stable token for graph equality checks."""
+        return json.dumps(
+            graph_data,
+            sort_keys=True,
+            separators=(',', ':'),
+        )
+
+    def _reset_graph_history(self: Any) -> None:
+        """Reset undo and redo stacks to the current graph snapshot."""
+        state = self._graph_history_state()
+        graph_data = cast(dict[str, Any], state['graph'])
+        self._history_undo = [state]
+        self._history_redo = []
+        self._history_last_graph_token = self._graph_history_token(graph_data)
+
+    def _record_graph_history_state(self: Any) -> None:
+        """Append current graph state to undo stack when graph changed."""
+        if bool(self._history_suspended):
+            return
+        state = self._graph_history_state()
+        graph_data = cast(dict[str, Any], state['graph'])
+        graph_token = self._graph_history_token(graph_data)
+        if graph_token == self._history_last_graph_token:
+            return
+        self._history_undo.append(state)
+        if len(self._history_undo) > self._GRAPH_HISTORY_LIMIT:
+            self._history_undo = self._history_undo[-self._GRAPH_HISTORY_LIMIT :]
+        self._history_redo = []
+        self._history_last_graph_token = graph_token
+
+    def _apply_graph_history_state(
+        self: Any,
+        state: dict[str, Any],
+    ) -> None:
+        """Apply one history state without recording another history entry."""
+        graph_data = dict(state.get('graph') or {})
+        selected_node_ids = {
+            str(node_id)
+            for node_id in list(state.get('selected_node_ids') or [])
+            if str(node_id)
+        }
+        selected_connection_id = state.get('selected_connection_id')
+
+        self._history_suspended = True
+        try:
+            self._graph = _graph_from_dict(graph_data)
+            self._normalize_graph()
+            self._pending_source_node_id = None
+            self._selected_node_ids = selected_node_ids
+            self._selected_connection_id = (
+                str(selected_connection_id)
+                if selected_connection_id not in (None, '')
+                else None
+            )
+            self._clear_preview_runtime_state()
+            self.refresh()
+        finally:
+            self._history_suspended = False
+
+    def _undo_graph_change(self: Any) -> tuple[bool, str]:
+        """Restore previous graph state from history."""
+        if len(self._history_undo) <= 1:
+            return (False, 'Nothing to undo.')
+        current_state = self._history_undo.pop()
+        self._history_redo.append(current_state)
+        previous_state = dict(self._history_undo[-1])
+        previous_graph = dict(previous_state.get('graph') or {})
+        self._history_last_graph_token = self._graph_history_token(previous_graph)
+        self._apply_graph_history_state(previous_state)
+        self._update_hint('Undid graph change.')
+        if self._on_change is not None:
+            self._on_change()
+        self._focus_canvas_shortcuts()
+        return (True, 'Undid graph change.')
+
+    def _redo_graph_change(self: Any) -> tuple[bool, str]:
+        """Re-apply next graph state from history."""
+        if not self._history_redo:
+            return (False, 'Nothing to redo.')
+        state = dict(self._history_redo.pop())
+        self._history_undo.append(state)
+        graph_data = dict(state.get('graph') or {})
+        self._history_last_graph_token = self._graph_history_token(graph_data)
+        self._apply_graph_history_state(state)
+        self._update_hint('Redid graph change.')
+        if self._on_change is not None:
+            self._on_change()
+        self._focus_canvas_shortcuts()
+        return (True, 'Redid graph change.')
 
     def _render_toolbar_menu(
         self: Any,
@@ -554,6 +663,8 @@ class _DesignerShellMixin:
                     self._render_toolbar_menu(
                         'Edit',
                         [
+                            ('Undo', self._undo_current_selection),
+                            ('Redo', self._redo_current_selection),
                             ('Copy Selection', self._copy_current_selection),
                             ('Paste', self._paste_current_selection),
                             ('Clear Selection', self._clear_selection),
@@ -651,6 +762,20 @@ class _DesignerShellMixin:
 
     def _copy_current_selection(self: Any) -> None:
         ok, message = self._copy_selection_to_clipboard()
+        self._notify_ui(
+            message,
+            type='positive' if ok else 'warning',
+        )
+
+    def _undo_current_selection(self: Any) -> None:
+        ok, message = self._undo_graph_change()
+        self._notify_ui(
+            message,
+            type='positive' if ok else 'warning',
+        )
+
+    def _redo_current_selection(self: Any) -> None:
+        ok, message = self._redo_graph_change()
         self._notify_ui(
             message,
             type='positive' if ok else 'warning',
@@ -757,6 +882,10 @@ class _DesignerShellMixin:
             'selected nodes. '
             f'{self._shortcut_display_binding("paste_selection")} pastes '
             'them. '
+            f'{self._shortcut_display_binding("undo_selection")} undoes '
+            'the latest graph change. '
+            f'{self._shortcut_display_binding("redo_selection")} redoes '
+            'the latest graph change. '
             f'{self._shortcut_display_binding("delete_selection_primary")} '
             'deletes selected nodes or connections. '
             f'{self._shortcut_display_binding("clear_selection")} clears '

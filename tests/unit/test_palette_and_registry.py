@@ -9,6 +9,7 @@ import pytest
 import acherion.embed.designer.interactions as acherion_designer_interactions
 import acherion.embed.designer.shell as acherion_designer_shell
 import acherion.embed.render.nodes as acherion_render_nodes
+import acherion.model as acherion_model
 import acherion.preferences as acherion_preferences
 import acherion.registry as acherion_registry
 
@@ -63,6 +64,8 @@ def test_copy_and_paste_shortcuts_use_graph_clipboard() -> None:
             self._selected_connection_id = None
             self.copy_calls = 0
             self.paste_calls = 0
+            self.undo_calls = 0
+            self.redo_calls = 0
             self.paste_anchor: tuple[int | None, int | None] | None = None
             self.notifications: list[tuple[str, str]] = []
 
@@ -83,6 +86,14 @@ def test_copy_and_paste_shortcuts_use_graph_clipboard() -> None:
         def _notify_ui(self, message: str, *, type: str = 'info') -> None:
             self.notifications.append((message, type))
 
+        def _undo_graph_change(self) -> tuple[bool, str]:
+            self.undo_calls += 1
+            return (True, 'Undid graph change.')
+
+        def _redo_graph_change(self) -> tuple[bool, str]:
+            self.redo_calls += 1
+            return (True, 'Redid graph change.')
+
     designer = _StubDesigner()
 
     class _CopyEvent:
@@ -96,15 +107,27 @@ def test_copy_and_paste_shortcuts_use_graph_clipboard() -> None:
             'anchor_y': 240,
         }
 
+    class _UndoEvent:
+        args = {'shortcut_id': 'undo_selection', 'key': 'z'}
+
+    class _RedoEvent:
+        args = {'shortcut_id': 'redo_selection', 'key': 'r'}
+
     designer._handle_canvas_key(_CopyEvent())
     designer._handle_canvas_key(_PasteEvent())
+    designer._handle_canvas_key(_UndoEvent())
+    designer._handle_canvas_key(_RedoEvent())
 
     assert designer.copy_calls == 1
     assert designer.paste_calls == 1
+    assert designer.undo_calls == 1
+    assert designer.redo_calls == 1
     assert designer.paste_anchor == (420, 240)
     assert designer.notifications == [
         ('Copied 1 node.', 'positive'),
         ('Pasted 1 node.', 'positive'),
+        ('Undid graph change.', 'positive'),
+        ('Redid graph change.', 'positive'),
     ]
 
 
@@ -212,6 +235,78 @@ def test_default_preferences_include_copy_and_paste_shortcuts() -> None:
 
     assert defaults['keyboard_shortcuts']['copy_selection'] == 'Ctrl+C'
     assert defaults['keyboard_shortcuts']['paste_selection'] == 'Ctrl+V'
+    assert defaults['keyboard_shortcuts']['undo_selection'] == 'Ctrl+Z'
+    assert defaults['keyboard_shortcuts']['redo_selection'] == 'Ctrl+R'
+
+
+def test_shell_history_undo_and_redo_restore_graph_state() -> None:
+    class _StubDesigner(acherion_designer_shell._DesignerShellMixin):
+        def __init__(self) -> None:
+            self._graph = acherion_model.AcherionGraph(
+                nodes=[
+                    acherion_model.AcherionNode(
+                        node_id='n1',
+                        kind='constant',
+                        params={'value_type': 'int', 'number_value': 1},
+                    )
+                ]
+            )
+            self._selected_node_ids: set[str] = set()
+            self._selected_connection_id = None
+            self._pending_source_node_id = None
+            self._history_undo = []
+            self._history_redo = []
+            self._history_last_graph_token = ''
+            self._history_suspended = False
+            self._on_change_calls = 0
+            self._hint_text = ''
+            self._on_change = self._on_change_callback
+
+        def _on_change_callback(self) -> None:
+            self._on_change_calls += 1
+
+        def _normalize_graph(self) -> None:
+            return
+
+        def _clear_preview_runtime_state(self) -> None:
+            return
+
+        def refresh(self) -> None:
+            return
+
+        def _update_hint(self, text: str | None = None) -> None:
+            self._hint_text = str(text or '')
+
+        def _focus_canvas_shortcuts(self) -> None:
+            return
+
+    designer = _StubDesigner()
+    designer._reset_graph_history()
+
+    designer._graph.nodes.append(
+        acherion_model.AcherionNode(
+            node_id='n2',
+            kind='constant',
+            params={'value_type': 'int', 'number_value': 2},
+        )
+    )
+    designer._notify_change()
+
+    assert len(designer._history_undo) == 2
+    assert not designer._history_redo
+
+    undone, undo_message = designer._undo_graph_change()
+
+    assert undone is True
+    assert undo_message == 'Undid graph change.'
+    assert [node.node_id for node in designer._graph.nodes] == ['n1']
+    assert len(designer._history_redo) == 1
+
+    redone, redo_message = designer._redo_graph_change()
+
+    assert redone is True
+    assert redo_message == 'Redid graph change.'
+    assert [node.node_id for node in designer._graph.nodes] == ['n1', 'n2']
 
 
 def test_menu_paste_uses_viewport_cursor_anchor() -> None:
