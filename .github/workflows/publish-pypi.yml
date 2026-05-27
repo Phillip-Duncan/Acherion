@@ -38,6 +38,27 @@ jobs:
       - name: Reset release branch to workflow SHA
         run: git reset --hard ${{ github.sha }}
 
+      - name: Fail on non-linear history since last release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -z "$last_tag" ]; then
+            echo "No previous release tag found; skipping merge-commit guard."
+            exit 0
+          fi
+
+          merge_commits="$(git log --merges --format='%h %s' "${last_tag}..HEAD")"
+          if [ -z "$merge_commits" ]; then
+            echo "History since ${last_tag} is linear."
+            exit 0
+          fi
+
+          echo "::error title=Non-linear release history::Merge commits detected since ${last_tag}. python-semantic-release can publish an empty changelog section on non-linear main history. Use squash merge or otherwise keep main linear before releasing."
+          echo "$merge_commits"
+          exit 1
+
       - name: Create semantic release
         id: semantic-release
         uses: python-semantic-release/python-semantic-release@v10.5.3

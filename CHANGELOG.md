@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ## v0.7.0 (2026-05-27)
 
+### Bug Fixes
+
+- Align help title with search box top
+  ([`d82acdd`](https://github.com/Phillip-Duncan/Acherion/commit/d82acdddde44b67e65a211313955c96cfbd7e68e))
+
+### Features
+
+- Add undo and redo history for graph edits
+  ([`95f3819`](https://github.com/Phillip-Duncan/Acherion/commit/95f38190e0deafde3913180f711f60aea703dd8a))
+- Add searchable help dialog and simplify workbench menus
+  ([`839e152`](https://github.com/Phillip-Duncan/Acherion/commit/839e1528f49f7f3f3cd7cd1af0eab76d8956f5b1))
+
 
 ## v0.6.0 (2026-05-27)
 

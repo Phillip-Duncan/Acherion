@@ -30,13 +30,15 @@ branch.
 The intended workflow is:
 
 1. open a pull request with a conventional title such as `feat: add scoped theme overrides`
-2. merge with **Squash and merge** so the PR title becomes the commit message on `main`
+2. merge with **Squash and merge** so the PR title becomes the commit message on `main` and the release history stays linear
 3. let the release workflow evaluate that commit and decide whether a new version is needed
 
 Direct pushes to `main` should also use conventional commit messages, otherwise
 semantic-release may correctly decide that no release is required.
 If you use merge commits or rebase merges, the final commit subjects on `main`
 still need to be conventional or releases and changelog entries may be skipped.
+The release workflow now fails fast when it sees merge commits since the last
+release tag, rather than silently publishing another empty changelog section.
 
 ## GitHub Actions workflows
 
@@ -52,13 +54,14 @@ It keeps the packaging path healthy by:
 `.github/workflows/publish-pypi.yml` is now the release workflow. On pushes to
 `main` it:
 
-1. runs `python-semantic-release` to determine the next version
-2. updates `pyproject.toml`
-3. updates `CHANGELOG.md`
-4. creates the release commit, tag, and GitHub Release
-5. checks out the released tag
-6. builds and verifies the distributions
-7. publishes them to PyPI through GitHub OIDC trusted publishing
+1. rejects non-linear history since the last release tag
+2. runs `python-semantic-release` to determine the next version
+3. updates `pyproject.toml`
+4. updates `CHANGELOG.md`
+5. creates the release commit, tag, and GitHub Release
+6. checks out the released tag
+7. builds and verifies the distributions
+8. publishes them to PyPI through GitHub OIDC trusted publishing
 
 The workflow checks out the full branch history and tags before running
 semantic-release so changelog generation can see the complete commit range.
