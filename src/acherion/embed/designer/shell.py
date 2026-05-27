@@ -1136,7 +1136,7 @@ class _DesignerShellMixin:
                                 )
                             with ui.element('div').classes('ach-preferences-main'):
                                 self._help_content_container = ui.element('div').classes(
-                                    'ach-preferences-content'
+                                    'ach-preferences-content ach-help-content'
                                 )
                     self._render_help_dialog_body()
                     with ui.element('div').classes('ach-preferences-footer'):

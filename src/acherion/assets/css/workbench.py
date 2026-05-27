@@ -377,11 +377,14 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
     padding: 14px var(--ach-dialog-pane-gutter) 16px;
     box-sizing: border-box;
 }
+.ach-help-content {
+    padding-top: 12px;
+}
 .ach-help-article {
     width: 100%;
 }
-.ach-help-article > :first-child {
-    margin-top: 0 !important;
+.ach-help-article .nicegui-markdown > :first-child {
+    margin-top: 2px !important;
 }
 .ach-preferences-content > * {
     width: 100%;
