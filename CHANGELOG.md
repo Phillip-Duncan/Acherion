@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.7.2 (2026-05-29)
+
+### Bug Fixes
+
+- **embed**: Stabilize inline node editing focus and preview updates
+  ([`7a075c2`](https://github.com/Phillip-Duncan/Acherion/commit/7a075c2a7240944ceed6bef7831204cc84ba514d))
+
+
 ## v0.7.1 (2026-05-27)
 
 ### Bug Fixes
