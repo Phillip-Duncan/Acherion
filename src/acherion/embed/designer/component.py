@@ -73,6 +73,7 @@ class AcherionDesigner(  # pyright: ignore
         *,
         host: AcherionHost | None = None,
         on_change: Callable[[], None] | None = None,
+        on_local_change: Callable[[], None] | None = None,
         on_apply_to_code: Callable[[], None] | None = None,
         on_run_preview: Callable[[], bool] | None = None,
         on_validate: Callable[[], bool] | None = None,
@@ -94,6 +95,7 @@ class AcherionDesigner(  # pyright: ignore
         self._graph = AcherionGraph()
         self._host = host
         self._on_change = on_change
+        self._on_local_change = on_local_change
         self._on_apply_to_code = on_apply_to_code
         self._on_run_preview = on_run_preview
         self._on_validate = on_validate
@@ -109,6 +111,7 @@ class AcherionDesigner(  # pyright: ignore
         self._preview_bindings: dict[str, dict[str, Any]] = {}
         self._preview_reference_values: dict[str, Any] = {}
         self._preview_state_values: dict[str, Any] = {}
+        self._pending_inline_local_change: bool = False
         self._canvas_el: Any = None
         self._graph_host_el: Any = None
         self._code_host_el: Any = None

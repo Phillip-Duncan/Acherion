@@ -533,13 +533,34 @@ class _DesignerShellMixin:
             f'}})()'
         )
 
-    def _notify_change(self: Any) -> None:
+    def _notify_change_core(
+        self: Any,
+        *,
+        refresh_graph: bool,
+        emit_callback: bool,
+    ) -> None:
         self._clear_preview_runtime_state()
-        self.refresh()
+        self._pending_inline_local_change = False
+        if refresh_graph:
+            self.refresh()
         self._record_graph_history_state()
         self._update_hint()
-        if self._on_change is not None:
+        if emit_callback and self._on_change is not None:
             self._on_change()
+
+    def _notify_change(self: Any) -> None:
+        self._notify_change_core(
+            refresh_graph=True,
+            emit_callback=True,
+        )
+
+    def _notify_change_without_refresh(self: Any) -> None:
+        self._notify_change_core(
+            refresh_graph=False,
+            emit_callback=False,
+        )
+        if self._on_local_change is not None:
+            self._on_local_change()
 
     def _graph_history_state(self: Any) -> dict[str, Any]:
         """Return one history entry for current graph and selection state."""

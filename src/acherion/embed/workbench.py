@@ -32,6 +32,7 @@ class AcherionWorkbench:
         *,
         host: AcherionHost | None = None,
         on_change: Callable[[], None] | None = None,
+        on_local_change: Callable[[], None] | None = None,
         on_apply_to_code: Callable[[], None] | None = None,
         on_run_preview: Callable[[], bool] | None = None,
         on_validate: Callable[[], bool] | None = None,
@@ -57,6 +58,7 @@ class AcherionWorkbench:
         session_storage_key: str | None = None,
     ) -> None:
         self._on_change = on_change
+        self._on_local_change = on_local_change
         self._on_apply_to_code = on_apply_to_code
         self._on_validate = on_validate
         self._host_build_code_view = build_code_view
@@ -96,6 +98,7 @@ class AcherionWorkbench:
         self._designer = AcherionDesigner(
             host=host,
             on_change=self._handle_change,
+            on_local_change=self._handle_local_change,
             on_apply_to_code=self._handle_apply_to_code,
             on_run_preview=on_run_preview,
             on_validate=self._handle_validate,
@@ -352,6 +355,15 @@ class AcherionWorkbench:
             self.refresh_code_view()
         if self._on_change is not None:
             self._on_change()
+
+    def _handle_local_change(self) -> None:
+        """Dispatch lightweight inline-change notifications."""
+        if self._on_local_change is None:
+            self._handle_change()
+            return
+        if self._refresh_code_on_change:
+            self.refresh_code_view()
+        self._on_local_change()
 
     def _handle_apply_to_code(self) -> None:
         """Dispatch compile/apply requests or fall back to code refresh."""

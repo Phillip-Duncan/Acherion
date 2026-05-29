@@ -42,6 +42,18 @@ def _is_unlabeled_exec_pin(pin: dict[str, str]) -> bool:
     return not str(pin.get('label') or '').strip()
 
 
+def _event_bool_arg(args: Any, key: str) -> bool:
+    """Return bool event arg when present."""
+    if not isinstance(args, dict):
+        return False
+    value = cast(dict[str, object], args).get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return bool(value)
+
+
 def _pairable_body_pin_key(
     pin: dict[str, str],
 ) -> tuple[str, str] | None:
@@ -71,6 +83,7 @@ class _RenderPinsMixin:
         input_kind: str,
         value: Any,
         notify: bool = True,
+        refresh: bool = True,
     ) -> None:
         """Persist one inline node default value."""
         if input_kind == 'number':
@@ -88,7 +101,23 @@ class _RenderPinsMixin:
         else:
             node.params[field_name] = str(value or '')
         if notify:
-            self._notify_change()
+            if refresh:
+                self._notify_change()
+            else:
+                self._notify_change_without_refresh()
+
+    def _mark_pending_inline_local_change(self: Any) -> None:
+        self._pending_inline_local_change = True
+
+    def _flush_pending_inline_local_change(
+        self: Any,
+        event: Any,
+    ) -> None:
+        if _event_bool_arg(getattr(event, 'args', None), 'keep_pending'):
+            return
+        if not bool(getattr(self, '_pending_inline_local_change', False)):
+            return
+        self._notify_change_without_refresh()
 
     def _render_inline_default_editor(self: Any, node: AcherionNode) -> bool:
         """Render compact node-card editor for supported default values."""
@@ -110,42 +139,44 @@ class _RenderPinsMixin:
             ).props(
                 f'dense outlined hide-bottom-space step={step}'
             ).classes(field_classes)
+
+            def _stage_number_value(event: Any) -> None:
+                self._set_inline_default_value(
+                    node,
+                    field_name=field_name,
+                    input_kind=input_kind,
+                    value=getattr(event, 'args', None),
+                    notify=False,
+                )
+                self._mark_pending_inline_local_change()
+
+            def _commit_number_value(event: Any) -> None:
+                self._set_inline_default_value(
+                    node,
+                    field_name=field_name,
+                    input_kind=input_kind,
+                    value=number_field.value,
+                    notify=False,
+                )
+                self._flush_pending_inline_local_change(event)
+
             number_field.on(
                 'update:model-value',
-                lambda event, cur=node, name=field_name, kind=input_kind: (
-                    self._set_inline_default_value(
-                        cur,
-                        field_name=name,
-                        input_kind=kind,
-                        value=getattr(event, 'args', None),
-                        notify=False,
-                    )
-                ),
+                _stage_number_value,
             )
             number_field.on(
                 'blur',
-                lambda _event, cur=node, name=field_name, kind=input_kind,
-                field=number_field: (
-                    self._set_inline_default_value(
-                        cur,
-                        field_name=name,
-                        input_kind=kind,
-                        value=field.value,
-                    )
+                _commit_number_value,
+                js_handler=(
+                    '(e) => emit({'
+                    'keep_pending: !!('
+                    'e.relatedTarget && '
+                    'e.relatedTarget.closest(".ach-node-inline-field")'
+                    ')'
+                    '})'
                 ),
             )
-            number_field.on(
-                'keydown.enter',
-                lambda _event, cur=node, name=field_name, kind=input_kind,
-                field=number_field: (
-                    self._set_inline_default_value(
-                        cur,
-                        field_name=name,
-                        input_kind=kind,
-                        value=field.value,
-                    )
-                ),
-            )
+            number_field.on('keydown.enter', _commit_number_value)
             return True
 
         text_field = ui.input(
@@ -153,42 +184,41 @@ class _RenderPinsMixin:
         ).props('dense outlined hide-bottom-space').classes(
             field_classes + ' ach-node-inline-field-text'
         )
-        text_field.on(
-            'update:model-value',
-            lambda event, cur=node, name=field_name, kind=input_kind: (
-                self._set_inline_default_value(
-                    cur,
-                    field_name=name,
-                    input_kind=kind,
-                    value=getattr(event, 'args', None),
-                    notify=False,
-                )
-            ),
-        )
+
+        def _stage_text_value(event: Any) -> None:
+            self._set_inline_default_value(
+                node,
+                field_name=field_name,
+                input_kind=input_kind,
+                value=getattr(event, 'args', None),
+                notify=False,
+            )
+            self._mark_pending_inline_local_change()
+
+        def _commit_text_value(event: Any) -> None:
+            self._set_inline_default_value(
+                node,
+                field_name=field_name,
+                input_kind=input_kind,
+                value=text_field.value,
+                notify=False,
+            )
+            self._flush_pending_inline_local_change(event)
+
+        text_field.on('update:model-value', _stage_text_value)
         text_field.on(
             'blur',
-            lambda _event, cur=node, name=field_name, kind=input_kind,
-            field=text_field: (
-                self._set_inline_default_value(
-                    cur,
-                    field_name=name,
-                    input_kind=kind,
-                    value=field.value,
-                )
+            _commit_text_value,
+            js_handler=(
+                '(e) => emit({'
+                'keep_pending: !!('
+                'e.relatedTarget && '
+                'e.relatedTarget.closest(".ach-node-inline-field")'
+                ')'
+                '})'
             ),
         )
-        text_field.on(
-            'keydown.enter',
-            lambda _event, cur=node, name=field_name, kind=input_kind,
-            field=text_field: (
-                self._set_inline_default_value(
-                    cur,
-                    field_name=name,
-                    input_kind=kind,
-                    value=field.value,
-                )
-            ),
-        )
+        text_field.on('keydown.enter', _commit_text_value)
         return True
 
     @staticmethod
@@ -247,6 +277,7 @@ class _RenderPinsMixin:
         pin_type: str,
         value: Any,
         notify: bool = True,
+        refresh: bool = True,
     ) -> None:
         """Persist one literal fallback value for an input pin."""
         literals = dict(node.params.get('pin_literals') or {})
@@ -261,7 +292,10 @@ class _RenderPinsMixin:
             literals[pin_id] = coerced_value
         node.params['pin_literals'] = literals
         if notify:
-            self._notify_change()
+            if refresh:
+                self._notify_change()
+            else:
+                self._notify_change_without_refresh()
 
     def _render_input_literal_editor(
         self: Any,
@@ -288,48 +322,46 @@ class _RenderPinsMixin:
             ).props(
                 f'dense outlined hide-bottom-space step={step}'
             ).classes(field_classes)
+
+            def _stage_literal_number(event: Any) -> None:
+                self._set_pin_literal_value(
+                    node,
+                    pin_id=pin_id,
+                    input_kind=input_kind,
+                    pin_type=pin_type,
+                    value=getattr(event, 'args', None),
+                    notify=False,
+                )
+                self._mark_pending_inline_local_change()
+
+            def _commit_literal_number(event: Any) -> None:
+                self._set_pin_literal_value(
+                    node,
+                    pin_id=pin_id,
+                    input_kind=input_kind,
+                    pin_type=pin_type,
+                    value=number_field.value,
+                    notify=False,
+                )
+                self._flush_pending_inline_local_change(event)
+
             number_field.on(
                 'update:model-value',
-                lambda event, cur=node, pid=pin_id, kind=input_kind,
-                ptype=pin_type: (
-                    self._set_pin_literal_value(
-                        cur,
-                        pin_id=pid,
-                        input_kind=kind,
-                        pin_type=ptype,
-                        value=getattr(event, 'args', None),
-                        notify=False,
-                    )
-                ),
+                _stage_literal_number,
             )
             number_field.on(
                 'blur',
-                lambda _event, cur=node, pid=pin_id, kind=input_kind,
-                ptype=pin_type,
-                field=number_field: (
-                    self._set_pin_literal_value(
-                        cur,
-                        pin_id=pid,
-                        input_kind=kind,
-                        pin_type=ptype,
-                        value=field.value,
-                    )
+                _commit_literal_number,
+                js_handler=(
+                    '(e) => emit({'
+                    'keep_pending: !!('
+                    'e.relatedTarget && '
+                    'e.relatedTarget.closest(".ach-node-inline-field")'
+                    ')'
+                    '})'
                 ),
             )
-            number_field.on(
-                'keydown.enter',
-                lambda _event, cur=node, pid=pin_id, kind=input_kind,
-                ptype=pin_type,
-                field=number_field: (
-                    self._set_pin_literal_value(
-                        cur,
-                        pin_id=pid,
-                        input_kind=kind,
-                        pin_type=ptype,
-                        value=field.value,
-                    )
-                ),
-            )
+            number_field.on('keydown.enter', _commit_literal_number)
             return True
 
         text_field = ui.input(
@@ -337,48 +369,46 @@ class _RenderPinsMixin:
         ).props('dense outlined hide-bottom-space').classes(
             field_classes + ' ach-node-inline-field-text'
         )
+
+        def _stage_literal_text(event: Any) -> None:
+            self._set_pin_literal_value(
+                node,
+                pin_id=pin_id,
+                input_kind=input_kind,
+                pin_type=pin_type,
+                value=getattr(event, 'args', None),
+                notify=False,
+            )
+            self._mark_pending_inline_local_change()
+
+        def _commit_literal_text(event: Any) -> None:
+            self._set_pin_literal_value(
+                node,
+                pin_id=pin_id,
+                input_kind=input_kind,
+                pin_type=pin_type,
+                value=text_field.value,
+                notify=False,
+            )
+            self._flush_pending_inline_local_change(event)
+
         text_field.on(
             'update:model-value',
-            lambda event, cur=node, pid=pin_id, kind=input_kind,
-            ptype=pin_type: (
-                self._set_pin_literal_value(
-                    cur,
-                    pin_id=pid,
-                    input_kind=kind,
-                    pin_type=ptype,
-                    value=getattr(event, 'args', None),
-                    notify=False,
-                )
-            ),
+            _stage_literal_text,
         )
         text_field.on(
             'blur',
-            lambda _event, cur=node, pid=pin_id, kind=input_kind,
-            ptype=pin_type,
-            field=text_field: (
-                self._set_pin_literal_value(
-                    cur,
-                    pin_id=pid,
-                    input_kind=kind,
-                    pin_type=ptype,
-                    value=field.value,
-                )
+            _commit_literal_text,
+            js_handler=(
+                '(e) => emit({'
+                'keep_pending: !!('
+                'e.relatedTarget && '
+                'e.relatedTarget.closest(".ach-node-inline-field")'
+                ')'
+                '})'
             ),
         )
-        text_field.on(
-            'keydown.enter',
-            lambda _event, cur=node, pid=pin_id, kind=input_kind,
-            ptype=pin_type,
-            field=text_field: (
-                self._set_pin_literal_value(
-                    cur,
-                    pin_id=pid,
-                    input_kind=kind,
-                    pin_type=ptype,
-                    value=field.value,
-                )
-            ),
-        )
+        text_field.on('keydown.enter', _commit_literal_text)
         return True
 
     def _function_box_entry_source_id(self: Any, node: AcherionNode) -> str:
