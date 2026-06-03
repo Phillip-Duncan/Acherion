@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ast
 from typing import Any, cast
 
 from nicegui import ui
@@ -86,7 +87,12 @@ class _RenderPinsMixin:
         refresh: bool = True,
     ) -> None:
         """Persist one inline node default value."""
-        if input_kind == 'number':
+        if input_kind == 'bool':
+            node.params[field_name] = bool(value)
+        elif input_kind == 'dict':
+            clean_value = str(value or '{}').strip()
+            node.params[field_name] = clean_value or '{}'
+        elif input_kind == 'number':
             if node.kind == 'constant':
                 value_type = str(node.params.get('value_type') or 'number').strip()
                 if value_type == 'int':
@@ -128,6 +134,20 @@ class _RenderPinsMixin:
             return False
         input_kind, field_name, current_value = spec
         field_classes = 'ach-node-inline-field'
+        if input_kind == 'bool':
+            ui.checkbox(
+                value=bool(current_value),
+                on_change=lambda e, cur=node: self._set_inline_default_value(
+                    cur,
+                    field_name=field_name,
+                    input_kind='bool',
+                    value=bool(getattr(e, 'value', False)),
+                ),
+            ).props('dense').classes(
+                'ach-node-inline-field ach-node-inline-field-bool'
+            )
+            return True
+
         if input_kind == 'number':
             field_classes += ' ach-node-inline-field-number'
             step = '1' if (
@@ -179,10 +199,16 @@ class _RenderPinsMixin:
             number_field.on('keydown.enter', _commit_number_value)
             return True
 
+        if input_kind == 'dict':
+            field_classes += ' ach-node-inline-field-dict'
+            current_text = str(current_value or '{}').strip() or '{}'
+        else:
+            field_classes += ' ach-node-inline-field-text'
+            current_text = str(current_value or '')
         text_field = ui.input(
-            value=str(current_value or ''),
+            value=current_text,
         ).props('dense outlined hide-bottom-space').classes(
-            field_classes + ' ach-node-inline-field-text'
+            field_classes
         )
 
         def _stage_text_value(event: Any) -> None:
@@ -227,8 +253,12 @@ class _RenderPinsMixin:
         editor_kind: str = '',
     ) -> str | None:
         """Return compact editor kind for one eligible input pin type."""
-        if editor_kind in {'number', 'text'}:
+        if editor_kind in {'bool', 'dict', 'number', 'text'}:
             return editor_kind
+        if pin_type == 'bool':
+            return 'bool'
+        if pin_type == 'dict':
+            return 'dict'
         if pin_type in {'float', 'int'}:
             return 'number'
         if pin_type == 'str':
@@ -254,6 +284,17 @@ class _RenderPinsMixin:
         pin_type: str,
     ) -> Any:
         """Normalize one literal input value using the pin's declared type."""
+        if input_kind == 'bool':
+            if isinstance(value, str):
+                return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+            return bool(value)
+        if input_kind == 'dict':
+            raw_value = str(value or '{}').strip() or '{}'
+            try:
+                parsed_value = ast.literal_eval(raw_value)
+            except (SyntaxError, ValueError):
+                return {}
+            return parsed_value if isinstance(parsed_value, dict) else {}
         if input_kind != 'number':
             return str(value)
         if pin_type == 'int':
@@ -313,6 +354,23 @@ class _RenderPinsMixin:
         if input_kind is None:
             return False
         current_value = self._pin_literal_value(node, pin_id)
+        if input_kind == 'bool':
+            ui.checkbox(
+                value=bool(current_value),
+                on_change=lambda e, cur=node, pid=pin_id, ptype=pin_type: (
+                    self._set_pin_literal_value(
+                        cur,
+                        pin_id=pid,
+                        input_kind='bool',
+                        pin_type=ptype,
+                        value=bool(getattr(e, 'value', False)),
+                    )
+                ),
+            ).props('dense').classes(
+                'ach-node-inline-field ach-node-inline-field-bool'
+            )
+            return True
+
         field_classes = 'ach-node-inline-field'
         if input_kind == 'number':
             field_classes += ' ach-node-inline-field-number'
@@ -364,10 +422,21 @@ class _RenderPinsMixin:
             number_field.on('keydown.enter', _commit_literal_number)
             return True
 
+        if input_kind == 'dict':
+            field_classes += ' ach-node-inline-field-dict'
+            if current_value is None:
+                current_text = '{}'
+            elif isinstance(current_value, str):
+                current_text = current_value.strip() or '{}'
+            else:
+                current_text = repr(current_value)
+        else:
+            field_classes += ' ach-node-inline-field-text'
+            current_text = '' if current_value is None else str(current_value)
         text_field = ui.input(
-            value='' if current_value is None else str(current_value),
+            value=current_text,
         ).props('dense outlined hide-bottom-space').classes(
-            field_classes + ' ach-node-inline-field-text'
+            field_classes
         )
 
         def _stage_literal_text(event: Any) -> None:
@@ -533,6 +602,20 @@ class _RenderPinsMixin:
         node: AcherionNode,
     ) -> int:
         """Return rendered body row count after inline pairing."""
+        if node.kind == 'else_if_branch':
+            return len(self._body_input_pins(node))
+        if node.kind == 'for_each':
+            data_outputs = [
+                pin for _index, pin in self._body_output_pins(node)
+                if not _is_exec_pin(pin)
+            ]
+            return 1 + len(data_outputs)
+        if node.kind == 'sequencer':
+            exec_outputs = [
+                pin for _index, pin in self._body_output_pins(node)
+                if _is_exec_pin(pin)
+            ]
+            return max(0, len(exec_outputs) - 1)
         return len(self._body_pin_rows(node))
 
     def _body_pin_row_index(
@@ -543,6 +626,44 @@ class _RenderPinsMixin:
         pin_index: int,
     ) -> int:
         """Return body row index for one input/output pin."""
+        if node.kind == 'else_if_branch':
+            if direction == 'out':
+                return max(0, pin_index - 1)
+            condition_indexes = [
+                index for index, _pin in self._body_input_pins(node)
+            ]
+            if pin_index in condition_indexes:
+                return condition_indexes.index(pin_index)
+            return 0
+        if node.kind == 'for_each':
+            if direction == 'out':
+                output_specs = self._output_pin_specs(node)
+                if pin_index < len(output_specs):
+                    pin_id = str(output_specs[pin_index].get('pin_id') or '')
+                    if pin_id == 'completed':
+                        return 0
+                    data_indexes = [
+                        index for index, pin in enumerate(output_specs)
+                        if not _is_exec_pin(pin)
+                    ]
+                    if pin_index in data_indexes:
+                        return data_indexes.index(pin_index) + 1
+                return 0
+            input_indexes = [
+                index for index, _pin in self._body_input_pins(node)
+            ]
+            if pin_index in input_indexes:
+                return input_indexes.index(pin_index)
+            return 0
+        if node.kind == 'sequencer':
+            if direction == 'out':
+                exec_indexes = [
+                    index for index, pin in enumerate(self._output_pin_specs(node))
+                    if _is_exec_pin(pin)
+                ]
+                if pin_index in exec_indexes:
+                    return max(0, exec_indexes.index(pin_index) - 1)
+            return 0
         for row_index, row in enumerate(self._body_pin_rows(node)):
             pin_entry = row['input'] if direction == 'in' else row['output']
             if pin_entry is None:
@@ -836,6 +957,233 @@ class _RenderPinsMixin:
                     label=output_spec['label'],
                     pin_type=output_spec.get('type', 'any'),
                 )
+
+    def _render_shifted_exec_output_pin(
+        self: Any,
+        node: AcherionNode,
+        *,
+        pin_index: int,
+        label: str,
+    ) -> None:
+        """Render one labeled exec output at the right edge of a shifted row."""
+        full_src_id = self._full_output_source_id(node, pin_index)
+        active = self._pending_source_node_id == full_src_id
+        btn_cls = _pin_button_classes('ach-pin-btn ach-pin-btn-out', 'exec')
+        if self._has_outgoing_connection(full_src_id):
+            btn_cls += ' ach-pin-btn-filled'
+        if active:
+            btn_cls += ' ach-pin-btn-active'
+        ui.label(label).classes('ach-wire-label')
+        ui.element('div').classes(
+            f'{btn_cls} ach-pin-anchor'
+        ).props(
+            f'data-node-id={node.node_id} '
+            'data-pin-direction=out '
+            f'data-pin-index={pin_index}'
+        ).on(
+            'click',
+            lambda _e, sid=full_src_id: self._start_connection(sid),
+        )
+
+    def _render_shifted_exec_output_row(
+        self: Any,
+        node: AcherionNode,
+        output_pin: tuple[int, dict[str, str]] | None,
+    ) -> None:
+        """Render a right-justified shifted exec output row."""
+        with ui.row().classes('ach-wire-row ach-exec-row'):
+            ui.space()
+            if output_pin is not None:
+                output_index, output_spec = output_pin
+                self._render_shifted_exec_output_pin(
+                    node,
+                    pin_index=output_index,
+                    label=output_spec['label'],
+                )
+            else:
+                ui.element('div').classes('ach-exec-row-spacer')
+
+    def _render_shifted_exec_top_row(
+        self: Any,
+        node: AcherionNode,
+        output_pin: tuple[int, dict[str, str]] | None,
+    ) -> None:
+        """Render the exec input and first shifted exec output on the top row."""
+        exec_input = self._top_exec_input_pin(node)
+        with ui.row().classes('ach-wire-row ach-exec-row'):
+            with ui.row().classes('items-center gap-2'):
+                if exec_input is not None:
+                    pin_index, pin = exec_input
+                    source_id = self._input_source_id(node, pin['pin_id'])
+                    btn_cls = _pin_button_classes(
+                        'ach-pin-btn ach-pin-btn-in',
+                        'exec',
+                    )
+                    if source_id:
+                        btn_cls += ' ach-pin-btn-filled'
+                    ui.element('div').classes(
+                        f'{btn_cls} ach-pin-anchor'
+                    ).props(
+                        f'data-node-id={node.node_id} '
+                        'data-pin-direction=in '
+                        f'data-pin-index={pin_index}'
+                    ).on(
+                        'click',
+                        lambda _e, cur=node, pid=pin['pin_id']: (
+                            self._connect_input_pin(cur, pid)
+                        ),
+                    )
+                else:
+                    ui.element('div').classes('ach-exec-row-spacer')
+            ui.space()
+            if output_pin is not None:
+                output_index, output_spec = output_pin
+                self._render_shifted_exec_output_pin(
+                    node,
+                    pin_index=output_index,
+                    label=output_spec['label'],
+                )
+            else:
+                ui.element('div').classes('ach-exec-row-spacer')
+
+    def _render_input_with_shifted_exec_output_row(
+        self: Any,
+        node: AcherionNode,
+        *,
+        input_pin: tuple[int, dict[str, str]],
+        output_pin: tuple[int, dict[str, str]] | None,
+    ) -> None:
+        """Render one input with a shifted exec output on the same row."""
+        input_index, input_spec = input_pin
+        pin_id = input_spec['pin_id']
+        pin_type = input_spec.get('type', 'any')
+        optional = input_spec.get('optional') == 'true'
+        source_id = self._input_source_id(node, pin_id)
+        is_incompatible = False
+        if self._pending_source_node_id is not None:
+            pending_type = self._pending_output_type()
+            if not _catalog_types.types_compatible(pending_type, pin_type):
+                is_incompatible = True
+        btn_cls = _pin_button_classes('ach-pin-btn ach-pin-btn-in', pin_type)
+        if optional:
+            btn_cls += ' ach-pin-btn-optional'
+        if source_id:
+            btn_cls += ' ach-pin-btn-filled'
+        row_cls = 'ach-wire-row'
+        if is_incompatible:
+            row_cls += ' ach-pin-incompatible'
+        if optional:
+            row_cls += ' ach-wire-row-optional'
+        with ui.row().classes(row_cls):
+            ui.element('div').classes(
+                f'{btn_cls} ach-pin-anchor'
+            ).props(
+                f'data-node-id={node.node_id} '
+                'data-pin-direction=in '
+                f'data-pin-index={input_index}'
+            ).on(
+                'click',
+                lambda _e, cur=node, pid=pin_id: (
+                    self._connect_input_pin(cur, pid)
+                ),
+            )
+            ui.label(input_spec['label']).classes('ach-wire-label')
+            self._render_input_literal_editor(
+                node,
+                pin_id=pin_id,
+                pin_type=pin_type,
+                editor_kind=input_spec.get('editor_kind', ''),
+                source_id=source_id,
+            )
+            ui.space()
+            if output_pin is not None:
+                output_index, output_spec = output_pin
+                self._render_shifted_exec_output_pin(
+                    node,
+                    pin_index=output_index,
+                    label=output_spec['label'],
+                )
+            else:
+                ui.element('div').classes('ach-exec-row-spacer')
+
+    def _render_else_if_branch_node(
+        self: Any,
+        node: AcherionNode,
+    ) -> None:
+        """Render an else-if branch with exec outputs shifted up one row."""
+        condition_inputs = self._body_input_pins(node)
+        exec_outputs = self._body_output_pins(node)
+        self._render_shifted_exec_top_row(
+            node,
+            exec_outputs[0] if exec_outputs else None,
+        )
+        for index, input_pin in enumerate(condition_inputs):
+            output_index = index + 1
+            self._render_input_with_shifted_exec_output_row(
+                node,
+                input_pin=input_pin,
+                output_pin=(
+                    exec_outputs[output_index]
+                    if output_index < len(exec_outputs)
+                    else None
+                ),
+            )
+
+    def _render_for_each_node(
+        self: Any,
+        node: AcherionNode,
+    ) -> None:
+        """Render For Each with exec outputs shifted to the first two rows."""
+        input_pins = {
+            pin.get('pin_id'): (index, pin)
+            for index, pin in self._body_input_pins(node)
+        }
+        output_pins = {
+            pin.get('pin_id'): (index, pin)
+            for index, pin in enumerate(self._output_pin_specs(node))
+        }
+        self._render_shifted_exec_top_row(
+            node,
+            output_pins.get('loop_body'),
+        )
+        list_input = input_pins.get('list')
+        if list_input is not None:
+            self._render_input_with_shifted_exec_output_row(
+                node,
+                input_pin=list_input,
+                output_pin=output_pins.get('completed'),
+            )
+        else:
+            self._render_shifted_exec_output_row(
+                node,
+                output_pins.get('completed'),
+            )
+        for output_index, output_spec in enumerate(self._output_pin_specs(node)):
+            if _is_exec_pin(output_spec):
+                continue
+            self._render_output_pin_row(
+                node,
+                pin_index=output_index,
+                label=output_spec['label'],
+                pin_type=output_spec.get('type', 'any'),
+            )
+
+    def _render_sequencer_node(
+        self: Any,
+        node: AcherionNode,
+    ) -> None:
+        """Render Sequencer with Then outputs shifted up and right-aligned."""
+        exec_outputs = [
+            (index, pin)
+            for index, pin in enumerate(self._output_pin_specs(node))
+            if _is_exec_pin(pin)
+        ]
+        self._render_shifted_exec_top_row(
+            node,
+            exec_outputs[0] if exec_outputs else None,
+        )
+        for output_pin in exec_outputs[1:]:
+            self._render_shifted_exec_output_row(node, output_pin)
 
     def _render_system_source_node(
         self: Any,

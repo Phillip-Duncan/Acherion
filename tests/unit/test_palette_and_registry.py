@@ -425,6 +425,14 @@ def test_palette_taxonomy_groups_like_nodes_together() -> None:
         'dict_get',
         'dict_set',
     ]
+    assert section_map['flow'] == [
+        'for_each',
+        'collect',
+        'branch_value',
+        'branch_route',
+        'else_if_branch',
+        'sequencer',
+    ]
     assert section_map['object'] == [
         'call_function',
         'call_method',

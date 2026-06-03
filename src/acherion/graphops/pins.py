@@ -41,12 +41,12 @@ _STATIC_INPUT_PIN_SPECS: dict[str, _AcherionPinSpecs] = {
         {'pin_id': 'right_source', 'label': 'Right', 'type': 'any'},
     ],
     'branch_value': [
-        {'pin_id': 'condition_source', 'label': 'Condition', 'type': 'any'},
+        {'pin_id': 'condition_source', 'label': 'Condition', 'type': 'bool'},
         {'pin_id': 'true_source', 'label': 'If True', 'type': 'any'},
         {'pin_id': 'false_source', 'label': 'If False', 'type': 'any'},
     ],
     'branch_route': [
-        {'pin_id': 'condition_source', 'label': 'Condition', 'type': 'any'},
+        {'pin_id': 'condition_source', 'label': 'Condition', 'type': 'bool'},
     ],
     'op_unary': [
         {
@@ -57,7 +57,7 @@ _STATIC_INPUT_PIN_SPECS: dict[str, _AcherionPinSpecs] = {
         },
     ],
     'op_not': [
-        {'pin_id': 'source', 'label': 'Value', 'type': 'any'},
+        {'pin_id': 'source', 'label': 'Value', 'type': 'bool'},
     ],
     'list_index': [
         {'pin_id': 'source', 'label': 'list', 'type': 'list'},
@@ -89,13 +89,13 @@ _STATIC_OUTPUT_PIN_SPECS: dict[str, _AcherionPinSpecs] = {
         {'pin_id': 'value', 'label': 'result', 'type': 'any'},
     ],
     'op_logic': [
-        {'pin_id': 'value', 'label': 'condition', 'type': 'any'},
+        {'pin_id': 'value', 'label': 'condition', 'type': 'bool'},
     ],
     'op_not': [
-        {'pin_id': 'value', 'label': 'condition', 'type': 'any'},
+        {'pin_id': 'value', 'label': 'condition', 'type': 'bool'},
     ],
     'compare': [
-        {'pin_id': 'result', 'label': 'condition', 'type': 'any'},
+        {'pin_id': 'result', 'label': 'condition', 'type': 'bool'},
     ],
     'branch_value': [
         {'pin_id': 'value', 'label': 'selected', 'type': 'any'},
@@ -355,12 +355,12 @@ class _GraphOpsPinsMixin:
             {
                 'pin_id': 'left_source',
                 'label': f'A  (A {operator} B)',
-                'type': 'any',
+                'type': 'bool',
             },
             {
                 'pin_id': 'right_source',
                 'label': 'B',
-                'type': 'any',
+                'type': 'bool',
             },
         ]
 

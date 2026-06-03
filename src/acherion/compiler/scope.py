@@ -12,6 +12,7 @@ from acherion.compiler.graph import (
     _FunctionBoxGraphView,
     _iter_param_sources,
 )
+from acherion.compiler.utils import _input_param_expr
 from acherion.compiler.state import EmitState
 from acherion.registry import (
     _template_has_exec_input,
@@ -30,6 +31,7 @@ _CONSTANT_OUTPUT_TYPE_BY_VALUE_TYPE = {
     'bool': 'bool',
     'dict': 'dict',
 }
+_ELSE_IF_BRANCH_MIN_CONDITIONS = 1
 
 
 class _EmitNodeCallback(Protocol):
@@ -207,6 +209,14 @@ class _EmitScope:
             return int(source_id.split('@', 1)[1] or 0)
         except ValueError:
             return 0
+
+    @staticmethod
+    def _else_if_branch_condition_count(node: AcherionNode) -> int:
+        try:
+            condition_count = int(node.params.get('condition_count', 2) or 2)
+        except (TypeError, ValueError):
+            condition_count = 2
+        return max(_ELSE_IF_BRANCH_MIN_CONDITIONS, condition_count)
 
     def _var_name(self, node: AcherionNode) -> str:
         index = self._original_index[node.node_id]
@@ -395,6 +405,16 @@ class _EmitScope:
     ) -> list[tuple[int, str]]:
         if node.kind == 'branch_route':
             return [(0, 'if_true'), (1, 'if_false')]
+        if node.kind == 'else_if_branch':
+            condition_count = self._else_if_branch_condition_count(node)
+            return [
+                (0, 'if:0'),
+                *[
+                    (index, f'elif:{index}')
+                    for index in range(1, condition_count)
+                ],
+                (condition_count, 'else'),
+            ]
         if node.kind == 'for_each':
             return [(2, 'loop_body'), (3, 'completed')]
         if node.kind == 'sequencer':
@@ -538,7 +558,12 @@ class _EmitScope:
         indent_level: int,
         emit_node: _EmitNodeCallback,
     ) -> None:
-        if node.kind in {'branch_route', 'for_each', 'function_entry'}:
+        if node.kind in {
+            'branch_route',
+            'else_if_branch',
+            'for_each',
+            'function_entry',
+        }:
             return
         if node.kind == 'sequencer':
             return
@@ -582,8 +607,10 @@ class _EmitScope:
             emit_node=emit_node,
         )
         indent = self._indent(indent_level)
-        cond_expr = self._state.source_expr(
-            str(node.params.get('condition_source') or ''),
+        cond_expr = _input_param_expr(
+            dict(node.params),
+            'condition_source',
+            self._state.node_vars,
             fallback='False',
         )
         true_target = next(iter(self._exec_successors(node, 0)), None)
@@ -599,6 +626,46 @@ class _EmitScope:
             self._state.lines.append(f'{indent}else:')
             self._emit_exec_node(
                 false_target,
+                indent_level=indent_level + 1,
+                emit_node=emit_node,
+            )
+
+    def _emit_else_if_branch(
+        self,
+        node: AcherionNode,
+        *,
+        indent_level: int,
+        emit_node: _EmitNodeCallback,
+    ) -> None:
+        self._ensure_dependencies(
+            node,
+            indent_level=indent_level,
+            emit_node=emit_node,
+        )
+        indent = self._indent(indent_level)
+        condition_count = self._else_if_branch_condition_count(node)
+        for index in range(condition_count):
+            condition_pin_id = f'condition:{index}'
+            cond_expr = _input_param_expr(
+                dict(node.params),
+                condition_pin_id,
+                self._state.node_vars,
+                fallback='False',
+            )
+            keyword = 'if' if index == 0 else 'elif'
+            self._state.lines.append(f'{indent}{keyword} bool({cond_expr}):')
+            target = next(iter(self._exec_successors(node, index)), None)
+            if target is not None:
+                self._emit_exec_node(
+                    target,
+                    indent_level=indent_level + 1,
+                    emit_node=emit_node,
+                )
+        else_target = next(iter(self._exec_successors(node, condition_count)), None)
+        if else_target is not None:
+            self._state.lines.append(f'{indent}else:')
+            self._emit_exec_node(
+                else_target,
                 indent_level=indent_level + 1,
                 emit_node=emit_node,
             )
@@ -666,6 +733,13 @@ class _EmitScope:
                 return
             if node.kind == 'branch_route':
                 self._emit_branch(
+                    node,
+                    indent_level=indent_level,
+                    emit_node=emit_node,
+                )
+                return
+            if node.kind == 'else_if_branch':
+                self._emit_else_if_branch(
                     node,
                     indent_level=indent_level,
                     emit_node=emit_node,

@@ -92,7 +92,7 @@ class _GraphNodeEmitterBase:
             helper_as_attribute=False,
         ):
             return
-        if node.kind in {'branch_route', 'for_each'}:
+        if node.kind in {'branch_route', 'else_if_branch', 'for_each'}:
             return
         if _emit_common_compute_node(
             state=self._state,

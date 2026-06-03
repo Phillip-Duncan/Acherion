@@ -108,6 +108,15 @@ class _RenderNodesMixin:
         if node.kind == 'function_box':
             self._render_function_box_node(node, graph_index)
             return
+        if node.kind == 'else_if_branch':
+            self._render_else_if_branch_node(node)
+            return
+        if node.kind == 'for_each':
+            self._render_for_each_node(node)
+            return
+        if node.kind == 'sequencer':
+            self._render_sequencer_node(node)
+            return
         self._render_body_pin_rows(node)
 
     def _render_node(
@@ -238,12 +247,20 @@ class _RenderNodesMixin:
                     ).props('flat dense round')
 
             with ui.element('div').classes('ach-node-body'):
-                self._render_top_exec_row(node)
-                if self._is_system_source_node(node):
+                if node.kind == 'else_if_branch':
+                    self._render_else_if_branch_node(node)
+                elif node.kind == 'for_each':
+                    self._render_for_each_node(node)
+                elif node.kind == 'sequencer':
+                    self._render_sequencer_node(node)
+                elif self._is_system_source_node(node):
+                    self._render_top_exec_row(node)
                     self._render_system_source_node(node)
                 elif self._is_system_sink_node(node):
+                    self._render_top_exec_row(node)
                     self._render_system_sink_node(node, graph_index)
                 else:
+                    self._render_top_exec_row(node)
                     self._render_manual_node(node, graph_index)
                 self._render_node_preview_card(node)
 

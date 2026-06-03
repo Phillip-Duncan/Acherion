@@ -288,7 +288,31 @@ class _RenderLayoutMixin:
                     pin_index=pin_index,
                 )
         else:
-            if top_exec_output is not None and pin_index == top_exec_output[0]:
+            if node.kind == 'else_if_branch':
+                row_index = max(0, pin_index)
+            elif node.kind == 'for_each':
+                output_specs = owner._output_pin_specs(node)
+                pin_id = (
+                    str(output_specs[pin_index].get('pin_id') or '')
+                    if pin_index < len(output_specs)
+                    else ''
+                )
+                if pin_id == 'loop_body':
+                    row_index = 0
+                elif pin_id == 'completed':
+                    row_index = 1
+                else:
+                    row_index = (
+                        int(has_top_exec_row)
+                        + owner._body_pin_row_index(
+                            node,
+                            direction='out',
+                            pin_index=pin_index,
+                        )
+                    )
+            elif node.kind == 'sequencer' and pin_index == 0:
+                row_index = 0
+            elif top_exec_output is not None and pin_index == top_exec_output[0]:
                 row_index = 0
             else:
                 row_index = int(has_top_exec_row) + owner._body_pin_row_index(

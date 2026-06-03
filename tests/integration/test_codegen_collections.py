@@ -71,6 +71,47 @@ def test_dict_nodes_build_read_and_copy_update_dict_values() -> None:
     assert preview.reference_values['d1'] == {'alpha': 1, 'beta': 2}
 
 
+def test_dict_input_pin_literals_compile_as_dict_values() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='c1',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 3,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='g1',
+                kind='dict_get',
+                params={
+                    'pin_literals': {
+                        'source': {'beta': 2},
+                        'key': 'beta',
+                    },
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='s1',
+                kind='dict_set',
+                params={
+                    'value': 'c1',
+                    'pin_literals': {
+                        'source': {'alpha': 1},
+                        'key': 'beta',
+                    },
+                },
+            ),
+        ]
+    )
+
+    preview = acherion_standalone_host.run_standalone_acherion_preview(graph)
+
+    assert preview.reference_values['g1'] == 2
+    assert preview.reference_values['s1'] == {'alpha': 1, 'beta': 3}
+
+
 def test_list_nodes_get_and_copy_update_single_indices_and_slices() -> None:
     graph = acherion_model.AcherionGraph(
         nodes=[

@@ -6,6 +6,20 @@ import acherion.catalog.types as acherion_catalog_types
 import acherion.node as acherion_node
 
 
+_ELSE_IF_BRANCH_MIN_CONDITIONS = 1
+
+
+def _else_if_branch_condition_count(node: object) -> int:
+    """Return the clamped condition count for an else-if branch node."""
+    raw_params = getattr(node, 'params', {})
+    params = raw_params if isinstance(raw_params, dict) else {}
+    try:
+        count = int(params.get('condition_count', 2) or 2)
+    except (TypeError, ValueError):
+        count = 2
+    return max(_ELSE_IF_BRANCH_MIN_CONDITIONS, count)
+
+
 def _for_each_item_type(owner: object, node: object) -> str:
     params = getattr(node, 'params', None)
     if not isinstance(params, dict):
@@ -126,7 +140,7 @@ class BranchValueNode(acherion_node.FlowNodeDefinition):
     ) -> list[dict[str, str]] | None:
         del owner, node
         return [
-            acherion_node.pin('condition_source', 'Condition', 'any'),
+            acherion_node.pin('condition_source', 'Condition', 'bool'),
             acherion_node.pin('true_source', 'If True', 'any'),
             acherion_node.pin('false_source', 'If False', 'any'),
         ]
@@ -156,7 +170,7 @@ class BranchRouteNode(acherion_node.FlowNodeDefinition):
         node: object,
     ) -> list[dict[str, str]] | None:
         del owner, node
-        return [acherion_node.pin('condition_source', 'Condition', 'any')]
+        return [acherion_node.pin('condition_source', 'Condition', 'bool')]
 
     def output_pins(
         self,
@@ -168,6 +182,55 @@ class BranchRouteNode(acherion_node.FlowNodeDefinition):
             acherion_node.pin('if_true', 'True', 'exec'),
             acherion_node.pin('if_false', 'False', 'exec'),
         ]
+
+
+class ElseIfBranchNode(acherion_node.FlowNodeDefinition):
+    kind = 'else_if_branch'
+    label = 'If / Else If Branch'
+    icon = 'fork_right'
+    tooltip = 'Route execution through if, else-if, and else branches.'
+    flavor = 'control'
+    producer = True
+    exec_in = True
+    default_params_factory = acherion_node.literal_params({
+        'condition_count': 2,
+    })
+
+    def input_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner
+        return [
+            acherion_node.pin(
+                f'condition:{index}',
+                f'Condition {index + 1}',
+                'bool',
+            )
+            for index in range(_else_if_branch_condition_count(node))
+        ]
+
+    def output_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        del owner
+        condition_count = _else_if_branch_condition_count(node)
+        pins = [
+            acherion_node.pin('if:0', 'If Cond 1', 'exec'),
+            *[
+                acherion_node.pin(
+                    f'elif:{index}',
+                    f'Else if Cond {index + 1}',
+                    'exec',
+                )
+                for index in range(1, condition_count)
+            ],
+        ]
+        pins.append(acherion_node.pin('else', 'Else', 'exec'))
+        return pins
 
 
 class SequencerNode(acherion_node.FlowNodeDefinition):
@@ -203,6 +266,7 @@ BUILTIN_FLOW_NODES = (
     CollectNode(),
     BranchValueNode(),
     BranchRouteNode(),
+    ElseIfBranchNode(),
     SequencerNode(),
 )
 

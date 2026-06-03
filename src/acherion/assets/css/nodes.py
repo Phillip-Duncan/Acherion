@@ -120,6 +120,12 @@ NODE_CSS = """
 .ach-node-inline-field-text {
     width: 112px;
 }
+.ach-node-inline-field-bool {
+    width: 28px;
+}
+.ach-node-inline-field-dict {
+    width: 144px;
+}
 .ach-node-inline-preview-summary {
     color: var(--oe-muted);
     font-size: 11px;

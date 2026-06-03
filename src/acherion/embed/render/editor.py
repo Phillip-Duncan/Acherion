@@ -71,14 +71,7 @@ class _RenderEditorMixin:
 
     def _validate_editor_node(self: Any, node: AcherionNode) -> bool:
         """Return True when the staged node is valid enough to save."""
-        if node.kind == 'constant' and str(node.params.get('value_type') or '') == 'dict':
-            raw = str(node.params.get('dict_value') or '').strip()
-            if not self._valid_dict_literal(raw):
-                self._notify_ui(
-                    'Dict constants must be valid Python dict literals before saving.',
-                    type='negative',
-                )
-                return False
+        del node
         return True
 
     @staticmethod
@@ -184,6 +177,28 @@ class _RenderEditorMixin:
         """Mutate draft sequencer branch count without persisting."""
         then_count = max(2, int(value or 0))
         node.params['then_count'] = min(8, then_count)
+
+    def _set_editor_else_if_condition_count(
+        self: Any,
+        node: AcherionNode,
+        value: Any,
+    ) -> None:
+        """Mutate draft else-if branch condition count without persisting."""
+        try:
+            raw_count = int(value or 0)
+        except (TypeError, ValueError):
+            raw_count = 2
+        condition_count = max(1, raw_count)
+        node.params['condition_count'] = condition_count
+        for param_id in list(node.params):
+            if not str(param_id).startswith('condition:'):
+                continue
+            try:
+                index = int(str(param_id).split(':', 1)[1])
+            except (IndexError, TypeError, ValueError):
+                continue
+            if index >= condition_count:
+                node.params.pop(str(param_id), None)
 
     def _set_editor_catalog_function(
         self: Any,
@@ -902,73 +917,6 @@ class _RenderEditorMixin:
                     refresh_after=True,
                 ),
             ).props('outlined dense').classes('w-full ach-editor-field')
-            if value_type == 'text':
-                ui.input(
-                    'Text value',
-                    value=str(node.params.get('text_value') or ''),
-                    on_change=lambda e, cur=node: _apply_change(
-                        lambda: self._set_editor_param(
-                            cur,
-                            'text_value',
-                            str(e.value or ''),
-                        ),
-                    ),
-                ).props('outlined').classes('w-full ach-editor-field')
-            elif value_type == 'bool':
-                ui.checkbox(
-                    'Boolean value',
-                    value=bool(node.params.get('bool_value', False)),
-                    on_change=lambda e, cur=node: _apply_change(
-                        lambda: self._set_editor_param(
-                            cur,
-                            'bool_value',
-                            bool(e.value),
-                        ),
-                    ),
-                )
-            elif value_type == 'int':
-                ui.number(
-                    'Integer value',
-                    value=int(node.params.get('number_value') or 0),
-                    format='%d',
-                    on_change=lambda e, cur=node: _apply_change(
-                        lambda: self._set_editor_param(
-                            cur,
-                            'number_value',
-                            e.value,
-                        ),
-                    ),
-                ).props('outlined step=1').classes('w-full ach-editor-field')
-            elif value_type == 'dict':
-                ui.input(
-                    'Dict literal',
-                    value=str(node.params.get('dict_value') or '{}'),
-                    validation={
-                        'Must be a Python dict literal': self._valid_dict_literal,
-                    },
-                    on_change=lambda e, cur=node: _apply_change(
-                        lambda: self._set_editor_param(
-                            cur,
-                            'dict_value',
-                            str(e.value or '{}'),
-                        ),
-                    ),
-                ).props('outlined').classes('w-full ach-editor-field')
-                ui.label('Enter a Python dict literal, e.g. {"key": 1}').classes(
-                    'text-xs oe-muted'
-                )
-            else:
-                ui.number(
-                    'Number value',
-                    value=float(node.params.get('number_value') or 0.0),
-                    on_change=lambda e, cur=node: _apply_change(
-                        lambda: self._set_editor_param(
-                            cur,
-                            'number_value',
-                            e.value,
-                        ),
-                    ),
-                ).props('outlined').classes('w-full ach-editor-field')
             return
 
         if node.kind == 'call_function':
@@ -1286,6 +1234,28 @@ class _RenderEditorMixin:
             )
             ui.label(
                 'Each Then output runs in order. Every exec output accepts one downstream path.'
+            ).classes('text-xs oe-muted')
+            return
+
+        if node.kind == 'else_if_branch':
+            ui.number(
+                label='Condition count',
+                value=int(node.params.get('condition_count', 2) or 2),
+                min=1,
+                step=1,
+                format='%d',
+                on_change=lambda e, cur=node: _apply_change(
+                    lambda: self._set_editor_else_if_condition_count(
+                        cur,
+                        e.value,
+                    ),
+                    refresh_after=True,
+                ),
+            ).props('outlined dense').classes(
+                'w-full ach-editor-field'
+            )
+            ui.label(
+                'Each condition adds one if/else-if output before the final Else output.'
             ).classes('text-xs oe-muted')
             return
 

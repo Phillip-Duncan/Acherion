@@ -15,6 +15,143 @@ import tests.helpers as test_helpers
 pytestmark = pytest.mark.integration
 
 
+def test_else_if_branch_routes_to_first_matching_condition() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='cond1',
+                kind='constant',
+                params={
+                    'value_type': 'bool',
+                    'bool_value': False,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='cond2',
+                kind='constant',
+                params={
+                    'value_type': 'bool',
+                    'bool_value': False,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='branch',
+                kind='else_if_branch',
+                params={
+                    'condition_count': 3,
+                    'condition:0': 'cond1',
+                    'condition:1': 'cond2',
+                    'pin_literals': {
+                        'condition:1': True,
+                        'condition:2': True,
+                    },
+                    'exec_sources': ['external_event:run'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='label_if',
+                kind='constant',
+                params={
+                    'value_type': 'text',
+                    'text_value': 'if',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='label_elif2',
+                kind='constant',
+                params={
+                    'value_type': 'text',
+                    'text_value': 'elif2',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='label_elif3',
+                kind='constant',
+                params={
+                    'value_type': 'text',
+                    'text_value': 'elif3',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='label_else',
+                kind='constant',
+                params={
+                    'value_type': 'text',
+                    'text_value': 'else',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_if',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['label_if'],
+                    'exec_sources': ['branch@0'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_elif2',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['label_elif2'],
+                    'exec_sources': ['branch@1'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_elif3',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['label_elif3'],
+                    'exec_sources': ['branch@2'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_else',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['label_else'],
+                    'exec_sources': ['branch@3'],
+                },
+            ),
+        ],
+        user_functions={
+            'user.mark': {
+                'label': 'mark',
+                'signature': 'mark(value)',
+                'min_args': 1,
+                'max_args': 1,
+                'param_names': ['value'],
+                'param_types': ['str'],
+                'return_type': 'dict',
+                'source_code': (
+                    'def mark(value):\n'
+                    '    return {"branch": value}\n'
+                ),
+            },
+        },
+    )
+
+    source_code = acherion.compile_acherion_graph(graph)
+    local_values = acherion.execute_acherion_graph(source_code)
+
+    assert source_code.count('elif bool(') == 2
+    assert any(value == {'branch': 'elif3'} for value in local_values.values())
+    assert not any(value == {'branch': 'if'} for value in local_values.values())
+    assert not any(value == {'branch': 'elif2'} for value in local_values.values())
+    assert not any(value == {'branch': 'else'} for value in local_values.values())
+
+
 def test_exec_chain_accepts_plain_exec_source_alias_for_object_nodes() -> None:
     graph = acherion_model.AcherionGraph(
         nodes=[

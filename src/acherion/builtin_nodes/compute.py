@@ -47,6 +47,10 @@ class ConstantNode(acherion_node.ComputeNodeDefinition):
             return ('number', 'number_value', params.get('number_value', 0))
         if value_type == 'text':
             return ('text', 'text_value', str(params.get('text_value') or ''))
+        if value_type == 'bool':
+            return ('bool', 'bool_value', bool(params.get('bool_value', False)))
+        if value_type == 'dict':
+            return ('dict', 'dict_value', str(params.get('dict_value') or '{}'))
         return None
 
 
@@ -157,7 +161,7 @@ class CompareNode(acherion_node.ComputeNodeDefinition):
         node: object,
     ) -> list[dict[str, str]] | None:
         del owner, node
-        return [acherion_node.pin('result', 'condition', 'any')]
+        return [acherion_node.pin('result', 'condition', 'bool')]
 
 
 class LogicNode(acherion_node.ComputeNodeDefinition):
@@ -183,9 +187,9 @@ class LogicNode(acherion_node.ComputeNodeDefinition):
             acherion_node.pin(
                 'left_source',
                 f'A  (A {operator.upper()} B)',
-                'any',
+                'bool',
             ),
-            acherion_node.pin('right_source', 'B', 'any'),
+            acherion_node.pin('right_source', 'B', 'bool'),
         ]
 
     def output_pins(
@@ -194,7 +198,7 @@ class LogicNode(acherion_node.ComputeNodeDefinition):
         node: object,
     ) -> list[dict[str, str]] | None:
         del owner, node
-        return [acherion_node.pin('value', 'condition', 'any')]
+        return [acherion_node.pin('value', 'condition', 'bool')]
 
 
 class LogicalNotNode(acherion_node.ComputeNodeDefinition):
@@ -211,7 +215,7 @@ class LogicalNotNode(acherion_node.ComputeNodeDefinition):
         node: object,
     ) -> list[dict[str, str]] | None:
         del owner, node
-        return [acherion_node.pin('source', 'Value', 'any')]
+        return [acherion_node.pin('source', 'Value', 'bool')]
 
     def output_pins(
         self,
@@ -219,7 +223,7 @@ class LogicalNotNode(acherion_node.ComputeNodeDefinition):
         node: object,
     ) -> list[dict[str, str]] | None:
         del owner, node
-        return [acherion_node.pin('value', 'condition', 'any')]
+        return [acherion_node.pin('value', 'condition', 'bool')]
 
 
 class MakeListNode(acherion_node.ComputeNodeDefinition):

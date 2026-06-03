@@ -1255,6 +1255,10 @@ class _GraphOpsMixin:
             child_ids.add(node_id)
             self._delete_nodes_batch(child_ids)
             return
+        self._clear_removed_source_refs(
+            removed_node_ids={node_id},
+            removed_source_ids=set(),
+        )
         manual_nodes = [
             n for n in self._manual_nodes() if n.node_id != node_id
         ]
@@ -1284,6 +1288,10 @@ class _GraphOpsMixin:
                     for child in manual_nodes
                     if self._function_parent_id(child) == node.node_id
                 )
+        self._clear_removed_source_refs(
+            removed_node_ids=expanded_ids,
+            removed_source_ids=set(),
+        )
         manual_nodes = [
             n for n in manual_nodes
             if n.node_id not in expanded_ids
