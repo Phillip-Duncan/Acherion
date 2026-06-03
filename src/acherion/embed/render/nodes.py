@@ -27,6 +27,7 @@ from acherion.render.shared import (
     _GROUP_FRAME_BOTTOM_PAD,
     _GROUP_FRAME_SIDE_PAD,
     _GROUP_FRAME_TOP_PAD,
+    render_acherion_icon,
 )
 
 
@@ -220,10 +221,14 @@ class _RenderNodesMixin:
                 return
             with ui.element('div').classes('ach-node-head'):
                 ui.icon('drag_indicator').classes('ach-node-drag')
-                ui.icon(_template_icon(node.kind)).classes(
-                    'ach-node-kind-icon '
-                    f'ach-node-kind-icon-{_template_flavor(node.kind)}'
-                ).style('font-size:18px;')
+                render_acherion_icon(
+                    _template_icon(node.kind),
+                    classes=(
+                        'ach-node-kind-icon '
+                        f'ach-node-kind-icon-{_template_flavor(node.kind)}'
+                    ),
+                    style='font-size:18px;',
+                )
                 with ui.column().classes('gap-0 min-w-0'):
                     ui.label(title).classes('text-sm font-semibold')
                     if header_slug:
@@ -850,10 +855,13 @@ class _RenderNodesMixin:
                                                                 '}'
                                                             ),
                                                         )
-                                                        ui.icon(template.icon).classes(
-                                                            'ach-palette-item-icon '
-                                                            f'ach-node-kind-icon-'
-                                                            f'{template.flavor}'
+                                                        render_acherion_icon(
+                                                            template.icon,
+                                                            classes=(
+                                                                'ach-palette-item-icon '
+                                                                f'ach-node-kind-icon-'
+                                                                f'{template.flavor}'
+                                                            ),
                                                         )
                                                         with ui.element('div').classes(
                                                             'min-w-0'

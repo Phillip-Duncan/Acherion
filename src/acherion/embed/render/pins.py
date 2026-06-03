@@ -17,6 +17,7 @@ from acherion.model import (
     _template_icon,
     _template_title,
 )
+from acherion.render.shared import render_acherion_icon
 
 
 def _pin_button_classes(base: str, pin_type: str) -> str:
@@ -1221,7 +1222,10 @@ class _RenderPinsMixin:
 
         with ui.element('div').classes('ach-function-box-head'):
             ui.icon('drag_indicator').classes('ach-node-drag')
-            ui.icon(_template_icon(node.kind)).classes('ach-function-box-icon')
+            render_acherion_icon(
+                _template_icon(node.kind),
+                classes='ach-function-box-icon',
+            )
             with ui.column().classes('gap-0 min-w-0'):
                 ui.label(node.title or _template_title(node.kind)).classes(
                     'ach-function-box-title'
