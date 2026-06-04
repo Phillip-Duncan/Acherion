@@ -388,6 +388,28 @@ class _DesignerInteractionsMixin:
             type='positive' if ok else 'warning',
         )
 
+    def _ctx_clear_pins(self: Any) -> None:
+        """Clear all pin connections and literals for selected nodes."""
+        node_ids = set(self._selected_node_ids)
+        self._ctx_dismiss()
+        if not node_ids:
+            self._notify_ui('Select nodes first.', type='warning')
+            return
+        changed = self._clear_node_pins(node_ids)
+        if changed:
+            self._notify_change()
+        count = len(node_ids)
+        noun = 'node' if count == 1 else 'nodes'
+        self._notify_ui(
+            (
+                f'Cleared pins on {count} {noun}.'
+                if changed else
+                f'Pins are already clear on {count} {noun}.'
+            ),
+            type='positive' if changed else 'warning',
+        )
+        self._focus_canvas_shortcuts()
+
     def _ctx_delete_selection(self: Any) -> None:
         """Delete selected nodes via context menu."""
         to_delete = set(self._selected_node_ids)

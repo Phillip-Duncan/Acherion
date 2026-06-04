@@ -166,6 +166,144 @@ class _GraphOpsConnectionsMixin:
         ):
             self._pending_source_node_id = None
 
+    def _clear_input_sources_for_node(
+        self: Any,
+        node: AcherionNode,
+    ) -> bool:
+        """Clear all incoming source refs and literal pin fallbacks on a node."""
+        changed = False
+        for pin in self._input_pin_specs(node):
+            pin_id = str(pin.get('pin_id') or '').strip()
+            if not pin_id:
+                continue
+            if pin_id == 'exec_source':
+                current_sources = self._exec_source_ids(node)
+                if current_sources:
+                    self._set_exec_sources(node, [])
+                    changed = True
+                continue
+            if self._input_source_id(node, pin_id):
+                self._set_input_source(node, pin_id, '')
+                changed = True
+
+        raw_literals = node.params.get('pin_literals')
+        if isinstance(raw_literals, dict) and raw_literals:
+            node.params.pop('pin_literals', None)
+            changed = True
+        elif 'pin_literals' in node.params and not isinstance(raw_literals, dict):
+            node.params.pop('pin_literals', None)
+            changed = True
+
+        return changed
+
+    def _clear_stored_source_refs_for_node(
+        self: Any,
+        node: AcherionNode,
+    ) -> bool:
+        """Clear stale source-reference stores not represented by visible pins."""
+        changed = False
+        exec_sources = self._normalize_exec_sources(
+            node.params.get('exec_sources')
+        )
+        if exec_sources:
+            node.params['exec_sources'] = []
+            changed = True
+        if node.params.pop('exec_source', None):
+            changed = True
+
+        arg_sources = list(node.params.get('arg_sources') or [])
+        if any(str(source_id or '').strip() for source_id in arg_sources):
+            node.params['arg_sources'] = ['' for _source_id in arg_sources]
+            changed = True
+
+        named_sources = dict(node.params.get('named_sources') or {})
+        if any(str(source_id or '').strip() for source_id in named_sources.values()):
+            node.params['named_sources'] = {
+                name: '' for name in named_sources
+            }
+            changed = True
+
+        box_input_sources = dict(node.params.get('box_input_sources') or {})
+        if any(
+            str(source_id or '').strip()
+            for source_id in box_input_sources.values()
+        ):
+            node.params['box_input_sources'] = {
+                input_id: '' for input_id in box_input_sources
+            }
+            changed = True
+
+        return changed
+
+    def _clear_outgoing_refs_to_node_ids(
+        self: Any,
+        node_ids: set[str],
+    ) -> bool:
+        """Clear all graph refs whose source node is in node_ids."""
+        target_ids = {
+            str(node_id or '').strip()
+            for node_id in node_ids
+            if str(node_id or '').strip()
+        }
+        if not target_ids:
+            return False
+        changed = False
+        for node in self._graph.nodes:
+            for pin in self._input_pin_specs(node):
+                pin_id = str(pin.get('pin_id') or '').strip()
+                if not pin_id:
+                    continue
+                if pin_id == 'exec_source':
+                    current_sources = self._exec_source_ids(node)
+                    remaining_sources = [
+                        source_id
+                        for source_id in current_sources
+                        if self._pure_node_id(source_id) not in target_ids
+                    ]
+                    if len(remaining_sources) != len(current_sources):
+                        self._set_exec_sources(node, remaining_sources)
+                        changed = True
+                    continue
+
+                source_id = self._input_source_id(node, pin_id)
+                if (
+                    source_id
+                    and self._pure_node_id(source_id) in target_ids
+                ):
+                    self._set_input_source(node, pin_id, '')
+                    changed = True
+
+        pending_source_id = str(self._pending_source_node_id or '')
+        if pending_source_id and self._pure_node_id(pending_source_id) in target_ids:
+            self._pending_source_node_id = None
+            changed = True
+        return changed
+
+    def _clear_node_pins(
+        self: Any,
+        node_ids: set[str],
+    ) -> bool:
+        """Clear all incoming and outgoing pin refs for selected nodes."""
+        valid_ids = {
+            node.node_id
+            for node in self._graph.nodes
+            if node.node_id in node_ids
+        }
+        if not valid_ids:
+            return False
+
+        changed = self._clear_outgoing_refs_to_node_ids(valid_ids)
+        for node in self._graph.nodes:
+            if node.node_id not in valid_ids:
+                continue
+            if self._clear_input_sources_for_node(node):
+                changed = True
+            if self._clear_stored_source_refs_for_node(node):
+                changed = True
+        if changed:
+            self._selected_connection_id = None
+        return changed
+
     def _input_source_id(
         self: Any,
         node: AcherionNode,

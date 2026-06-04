@@ -309,7 +309,6 @@ class ListIndexNode(acherion_node.ComputeNodeDefinition):
         'Read one list or ndarray item, or switch to slice mode with '
         'optional bounds.'
     )
-    source_param_ids_factory = acherion_node.source_param_ids('source')
     default_params_factory = acherion_node.literal_params({
         'source': '',
         'mode': 'index',
@@ -324,8 +323,43 @@ class ListIndexNode(acherion_node.ComputeNodeDefinition):
         owner: object,
         node: object,
     ) -> list[dict[str, str]] | None:
-        del owner, node
-        return [acherion_node.pin('source', 'list', 'list')]
+        del owner
+        mode = str(getattr(node, 'params', {}).get('mode') or 'index').strip()
+        pins = [acherion_node.pin('source', 'list', 'list')]
+        if mode == 'slice':
+            pins.extend([
+                acherion_node.pin(
+                    'start',
+                    'start',
+                    'int',
+                    optional=True,
+                    editor_kind='number',
+                ),
+                acherion_node.pin(
+                    'stop',
+                    'stop',
+                    'int',
+                    optional=True,
+                    editor_kind='number',
+                ),
+                acherion_node.pin(
+                    'step',
+                    'step',
+                    'int',
+                    optional=True,
+                    editor_kind='number',
+                ),
+            ])
+            return pins
+        pins.append(
+            acherion_node.pin(
+                'index',
+                'index',
+                'int',
+                editor_kind='number',
+            )
+        )
+        return pins
 
 
 class ListSetNode(acherion_node.ComputeNodeDefinition):
@@ -336,10 +370,6 @@ class ListSetNode(acherion_node.ComputeNodeDefinition):
     tooltip = (
         'Return a copied list or ndarray with one item or slice updated.'
     )
-    source_param_ids_factory = acherion_node.source_param_ids(
-        'source',
-        'value',
-    )
     default_params_factory = acherion_node.literal_params({
         'source': '',
         'mode': 'index',
@@ -354,11 +384,44 @@ class ListSetNode(acherion_node.ComputeNodeDefinition):
         owner: object,
         node: object,
     ) -> list[dict[str, str]] | None:
-        del owner, node
-        return [
-            acherion_node.pin('source', 'list', 'list'),
-            acherion_node.pin('value', 'value', 'any'),
-        ]
+        del owner
+        mode = str(getattr(node, 'params', {}).get('mode') or 'index').strip()
+        pins = [acherion_node.pin('source', 'list', 'list')]
+        if mode == 'slice':
+            pins.extend([
+                acherion_node.pin(
+                    'start',
+                    'start',
+                    'int',
+                    optional=True,
+                    editor_kind='number',
+                ),
+                acherion_node.pin(
+                    'stop',
+                    'stop',
+                    'int',
+                    optional=True,
+                    editor_kind='number',
+                ),
+                acherion_node.pin(
+                    'step',
+                    'step',
+                    'int',
+                    optional=True,
+                    editor_kind='number',
+                ),
+            ])
+        else:
+            pins.append(
+                acherion_node.pin(
+                    'index',
+                    'index',
+                    'int',
+                    editor_kind='number',
+                )
+            )
+        pins.append(acherion_node.pin('value', 'value', 'any'))
+        return pins
 
 
 class DictGetNode(acherion_node.ComputeNodeDefinition):

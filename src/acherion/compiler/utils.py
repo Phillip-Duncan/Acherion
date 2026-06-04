@@ -188,16 +188,53 @@ def _optional_positive_int_text(value: Any) -> str:
     return text if int(text) > 0 else ''
 
 
-def _list_index_expr(source_expr: str, params: dict[str, Any]) -> str:
+def _list_index_bound_expr(
+    params: dict[str, Any],
+    pin_id: str,
+    node_vars: dict[str, str] | None,
+    *,
+    fallback: str = '',
+) -> str:
+    """Return one list index/slice bound expression from pins or legacy params."""
+    if node_vars is not None:
+        raw_source = params.get(pin_id)
+        source_id = (
+            str(raw_source or '').strip()
+            if isinstance(raw_source, str)
+            else ''
+        )
+        if source_id and (
+            source_id in node_vars
+            or not _optional_index_text(source_id)
+        ):
+            return _source_expr(source_id, node_vars, fallback=fallback)
+        raw_literals = params.get('pin_literals')
+        if isinstance(raw_literals, dict) and pin_id in raw_literals:
+            text = _optional_index_text(raw_literals.get(pin_id))
+            return text or fallback
+    text = _optional_index_text(params.get(pin_id))
+    return text or fallback
+
+
+def _list_index_expr(
+    source_expr: str,
+    params: dict[str, Any],
+    node_vars: dict[str, str] | None = None,
+) -> str:
     """Return Python list or ndarray indexing or slicing expression."""
     mode = str(params.get('mode') or 'index').strip()
     if mode != 'slice':
-        index = _optional_index_text(params.get('index'))
-        return f'{source_expr}[{index or "0"}]'
+        index = _list_index_bound_expr(
+            params,
+            'index',
+            node_vars,
+            fallback='0',
+        )
+        return f'{source_expr}[{index}]'
 
-    start = _optional_index_text(params.get('start'))
-    stop = _optional_index_text(params.get('stop'))
-    step = _optional_index_text(params.get('step'))
+    start = _list_index_bound_expr(params, 'start', node_vars)
+    stop = _list_index_bound_expr(params, 'stop', node_vars)
+    step = _list_index_bound_expr(params, 'step', node_vars)
     if step == '0':
         step = ''
     slice_expr = f'{start}:{stop}'

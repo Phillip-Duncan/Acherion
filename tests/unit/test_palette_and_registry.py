@@ -30,6 +30,37 @@ def test_list_index_definition_keeps_index_and_slice_defaults() -> None:
         'stop': '',
         'step': '',
     }
+    index_pins = definition.input_pins(
+        None,
+        acherion_model.AcherionNode(
+            node_id='idx1',
+            kind='list_index',
+            params={'mode': 'index'},
+        ),
+    )
+    slice_pins = definition.input_pins(
+        None,
+        acherion_model.AcherionNode(
+            node_id='idx1',
+            kind='list_index',
+            params={'mode': 'slice'},
+        ),
+    )
+
+    assert [pin['pin_id'] for pin in index_pins] == ['source', 'index']
+    assert [pin['type'] for pin in index_pins] == ['list', 'int']
+    assert [pin['pin_id'] for pin in slice_pins] == [
+        'source',
+        'start',
+        'stop',
+        'step',
+    ]
+    assert [pin['type'] for pin in slice_pins] == [
+        'list',
+        'int',
+        'int',
+        'int',
+    ]
 
 
 def test_clear_selection_shortcut_clears_selected_nodes() -> None:

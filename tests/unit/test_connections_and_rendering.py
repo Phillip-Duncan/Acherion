@@ -201,6 +201,77 @@ def test_delete_nodes_batch_clears_data_refs_to_removed_output_nodes() -> None:
     assert owner.change_count == 1
 
 
+def test_clear_node_pins_clears_incoming_outgoing_exec_and_literals() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='source',
+                kind='constant',
+                params={'value_type': 'int', 'number_value': 1},
+            ),
+            acherion_model.AcherionNode(
+                node_id='other',
+                kind='constant',
+                params={'value_type': 'int', 'number_value': 2},
+            ),
+            acherion_model.AcherionNode(
+                node_id='math',
+                kind='op_arithmetic',
+                params={
+                    'operator': '+',
+                    'left_source': 'source@0',
+                    'right_source': 'other@0',
+                    'pin_literals': {'left_source': 10},
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='branch',
+                kind='branch_route',
+                params={
+                    'condition_source': 'source@0',
+                    'pin_literals': {'condition_source': False},
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='consumer',
+                kind='op_arithmetic',
+                params={
+                    'operator': '+',
+                    'left_source': 'math@0',
+                    'right_source': 'other@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='setter',
+                kind='set_attribute',
+                params={
+                    'exec_sources': ['branch@0', 'branch@1'],
+                    'instance': 'math@0',
+                    'attribute_name': 'value',
+                    'value': 'other@0',
+                },
+            ),
+        ]
+    )
+    owner = _DeleteNodeOwner(graph)
+
+    changed = owner._clear_node_pins({'math', 'branch'})
+
+    nodes = {node.node_id: node for node in graph.nodes}
+    assert changed is True
+    assert nodes['math'].params['left_source'] == ''
+    assert nodes['math'].params['right_source'] == ''
+    assert 'pin_literals' not in nodes['math'].params
+    assert nodes['branch'].params['condition_source'] == ''
+    assert 'pin_literals' not in nodes['branch'].params
+    assert nodes['consumer'].params['left_source'] == ''
+    assert nodes['consumer'].params['right_source'] == 'other@0'
+    assert nodes['setter'].params['exec_sources'] == []
+    assert nodes['setter'].params['instance'] == ''
+    assert nodes['setter'].params['value'] == 'other@0'
+    assert owner.change_count == 0
+
+
 def test_int_typed_pin_literals_are_coerced_before_preview_runtime() -> None:
     renderer = test_helpers.PinLiteralRenderer()
     node = acherion_model.AcherionNode(
@@ -285,6 +356,47 @@ def test_dict_typed_pin_literals_store_dict_values() -> None:
     assert node.params['pin_literals']['source'] == {'alpha': 1}
     assert node.params['pin_literals']['fallback'] == {}
     assert renderer.change_count == 2
+
+
+def test_dict_get_output_pin_uses_preview_runtime_type() -> None:
+    owner = test_helpers.RenderPinsOwner()
+    owner._preview_reference_values = {'dict_get': 2}
+    node = acherion_model.AcherionNode(
+        node_id='dict_get',
+        kind='dict_get',
+        params={},
+    )
+
+    assert owner._output_pin_specs(node)[0]['type'] == 'int'
+
+
+def test_list_nodes_expose_index_and_slice_bounds_as_int_pins() -> None:
+    owner = test_helpers.RenderPinsOwner()
+    get_index = acherion_model.AcherionNode(
+        node_id='get',
+        kind='list_index',
+        params={'mode': 'index'},
+    )
+    set_slice = acherion_model.AcherionNode(
+        node_id='set',
+        kind='list_set',
+        params={'mode': 'slice'},
+    )
+
+    get_pins = owner._input_pin_specs(get_index)
+    set_pins = owner._input_pin_specs(set_slice)
+
+    assert [(pin['pin_id'], pin['type']) for pin in get_pins] == [
+        ('source', 'list'),
+        ('index', 'int'),
+    ]
+    assert [(pin['pin_id'], pin['type']) for pin in set_pins] == [
+        ('source', 'list'),
+        ('value', 'any'),
+        ('start', 'int'),
+        ('stop', 'int'),
+        ('step', 'int'),
+    ]
 
 
 def test_boolean_logic_pins_are_typed_for_checkbox_fallbacks() -> None:

@@ -484,7 +484,7 @@ def _emit_list_index_node(
         state.node_vars,
     )
     state.lines.append(
-        f'{indent}{var_name} = {_list_index_expr(src, params)}'
+        f'{indent}{var_name} = {_list_index_expr(src, params, state.node_vars)}'
     )
     state.store(node.node_id, var_name)
     return True
@@ -522,7 +522,7 @@ def _emit_list_set_node(
     )
     state.lines.append(f'{indent}try:')
     state.lines.append(
-        f'{indent}    {_list_index_expr(var_name, params)} = {value_expr}'
+        f'{indent}    {_list_index_expr(var_name, params, state.node_vars)} = {value_expr}'
     )
     state.lines.append(f'{indent}except (IndexError, TypeError, ValueError):')
     state.lines.append(f'{indent}    pass')

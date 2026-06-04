@@ -518,9 +518,12 @@ class _GraphOpsPinsMixin:
         if definition is not None:
             definition_pins = definition.output_pins(self, node)
             if definition_pins is not None:
-                return cast(
-                    list[dict[str, str]],
-                    self._finalize_output_pins(node, definition_pins),
+                return self._with_preview_output_types(
+                    node,
+                    cast(
+                        list[dict[str, str]],
+                        self._finalize_output_pins(node, definition_pins),
+                    ),
                 )
         pins = self._pin_specs_from_registry(
             node,
@@ -528,6 +531,14 @@ class _GraphOpsPinsMixin:
             dynamic_builders=_DYNAMIC_OUTPUT_PIN_BUILDERS,
         )
         final_pins = cast(list[dict[str, str]], self._finalize_output_pins(node, pins))
+        return self._with_preview_output_types(node, final_pins)
+
+    def _with_preview_output_types(
+        self: Any,
+        node: AcherionNode,
+        final_pins: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        """Refine output pin types using latest runtime preview values."""
         output_count = len(final_pins)
         for index, pin in enumerate(final_pins):
             if str(pin.get('type') or '') == 'exec':

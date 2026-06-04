@@ -436,6 +436,14 @@ class _RenderNodesMixin:
                 'Node Actions',
                 [
                     {
+                        'icon': 'link_off',
+                        'label': 'Clear Pins',
+                        'action': self._ctx_clear_pins,
+                        'keywords': (
+                            'clear pins disconnect wires inputs outputs'
+                        ),
+                    },
+                    {
                         'icon': 'delete_outline',
                         'label': 'Delete Selection',
                         'action': self._ctx_delete_selection,

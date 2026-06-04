@@ -1267,32 +1267,6 @@ class _RenderEditorMixin:
                 else 'Set List Value(s)'
             )
 
-            def _bound_display(key: str) -> str:
-                raw_value = node.params.get(key)
-                if raw_value in (None, ''):
-                    return ''
-                text: str = str(raw_value).strip()
-                if not text:
-                    return ''
-                try:
-                    return str(int(text))
-                except (TypeError, ValueError):
-                    return ''
-
-            def _set_bound(key: str, raw_value: Any) -> None:
-                text: str = str(raw_value or '').strip()
-                if not text:
-                    self._set_editor_param(node, key, '')
-                    return
-                try:
-                    parsed = int(text)
-                except (TypeError, ValueError):
-                    return
-                if key == 'step' and parsed == 0:
-                    self._set_editor_param(node, key, '')
-                    return
-                self._set_editor_param(node, key, parsed)
-
             ui.select(
                 {'index': 'Single index', 'slice': 'Slice / step'},
                 label='Mode',
@@ -1307,54 +1281,26 @@ class _RenderEditorMixin:
                 ),
             ).props('outlined dense').classes('w-full ach-editor-field')
             if mode == 'slice':
-                ui.input(
-                    'Start (optional)',
-                    value=_bound_display('start'),
-                    on_change=lambda e, key='start': _apply_change(
-                        lambda: _set_bound(key, e.value),
-                    ),
-                ).props('outlined dense type=number').classes('w-full ach-editor-field')
-                ui.input(
-                    'Stop (optional)',
-                    value=_bound_display('stop'),
-                    on_change=lambda e, key='stop': _apply_change(
-                        lambda: _set_bound(key, e.value),
-                    ),
-                ).props('outlined dense type=number').classes('w-full ach-editor-field')
-                ui.input(
-                    'Step (optional, non-zero)',
-                    value=_bound_display('step'),
-                    on_change=lambda e, key='step': _apply_change(
-                        lambda: _set_bound(key, e.value),
-                    ),
-                ).props('outlined dense type=number').classes('w-full ach-editor-field')
                 ui.label(
                     (
-                        'Uses Python slice semantics: '
-                        'source[start:stop:step].'
+                        'Use the start, stop, and step input pins on the node '
+                        'for Python slice semantics.'
                         if node.kind == 'list_index'
-                        else 'Uses Python slice assignment semantics: '
-                        'result[start:stop:step] = value. Connect an '
-                        'iterable replacement when updating list slices.'
+                        else 'Use the start, stop, and step input pins on the '
+                        'node for Python slice assignment. Connect an iterable '
+                        'replacement when updating list slices.'
                     )
                 ).classes('text-xs oe-muted')
             else:
-                ui.number(
-                    'Index (0-based)',
-                    value=int(node.params.get('index', 0) or 0),
-                    format='%d',
-                    on_change=lambda e, cur=node: _apply_change(
-                        lambda: self._set_editor_param(
-                            cur,
-                            'index',
-                            int(e.value or 0),
-                        ),
-                    ),
-                ).props('outlined dense step=1').classes('w-full ach-editor-field')
-                if node.kind == 'list_set':
-                    ui.label(
-                        'Returns a copied list or ndarray with one item updated.'
-                    ).classes('text-xs oe-muted')
+                ui.label(
+                    (
+                        'Use the index input pin on the node for zero-based '
+                        'list or ndarray access.'
+                        if node.kind == 'list_index'
+                        else 'Use the index input pin on the node. The node '
+                        'returns a copied list or ndarray with one item updated.'
+                    )
+                ).classes('text-xs oe-muted')
             ui.label(
                 f'{node_label} works with lists and ndarrays.'
             ).classes('text-xs oe-muted')
