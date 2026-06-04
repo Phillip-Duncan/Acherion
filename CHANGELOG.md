@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.8.0 (2026-06-04)
+
+### Bug Fixes
+
+- **graph**: Clear pins and compile list bounds from pin inputs
+  ([`182276c`](https://github.com/Phillip-Duncan/Acherion/commit/182276ce7cdca7cb7b09c420cbf82d931e084560))
+
+### Features
+
+- Add else-if branching and inline pin editors
+  ([`1f7237e`](https://github.com/Phillip-Duncan/Acherion/commit/1f7237eb7b00ca6b7d5f1c91f6590e20d3d26062))
+
+- **render**: Support inline svg node icons
+  ([`d59a5e0`](https://github.com/Phillip-Duncan/Acherion/commit/d59a5e0a18939cc4ea6da37558dc5601b83a8f39))
+
+
 ## v0.7.2 (2026-05-29)
 
 ### Bug Fixes
