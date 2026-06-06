@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.8.1 (2026-06-06)
+
+### Performance Improvements
+
+- **graph**: Reduce redraw overhead for large node graphs
+  ([`18a6dfd`](https://github.com/Phillip-Duncan/Acherion/commit/18a6dfdc59077a72ada8b58ec4c1d40d15c7c7d8))
+
+
 ## v0.8.0 (2026-06-04)
 
 ### Bug Fixes
