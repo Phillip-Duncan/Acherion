@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import acherion.graph_helpers as _graph_helpers
 import acherion.node_behaviors as acherion_node_behaviors
 from acherion.catalog import runtime as _catalog_runtime
 from acherion.catalog import types as _catalog_types
@@ -166,29 +167,25 @@ class _EmitScope:
     @staticmethod
     def _normalize_exec_sources(value: object) -> list[str]:
         """Return cleaned exec-source ids from list storage."""
-        if isinstance(value, str):
-            cleaned = str(value or '').strip()
-            return [cleaned] if cleaned else []
-        if not isinstance(value, list):
-            return []
-        out: list[str] = []
-        seen: set[str] = set()
-        for raw_source in value:
-            cleaned = str(raw_source or '').strip()
-            if not cleaned or cleaned in seen:
-                continue
-            out.append(cleaned)
-            seen.add(cleaned)
-        return out
+        return _graph_helpers.normalize_exec_sources(value)
 
     def _exec_source_ids(self, node: AcherionNode) -> list[str]:
         return self._normalize_exec_sources(node.params.get('exec_sources'))
 
     def _build_exec_targets(self) -> dict[str, list[AcherionNode]]:
+        records = [
+            (node.node_id, node.params.get('exec_sources'))
+            for node in self._ordered_nodes()
+        ]
         targets: dict[str, list[AcherionNode]] = {}
-        for node in self._ordered_nodes():
-            for source_id in self._exec_source_ids(node):
-                targets.setdefault(source_id, []).append(node)
+        for source_id, node_ids in _graph_helpers.build_exec_targets(records):
+            target_nodes = [
+                self._node_index[node_id]
+                for node_id in node_ids
+                if node_id in self._node_index
+            ]
+            if target_nodes:
+                targets[source_id] = target_nodes
         return targets
 
     def _source_is_known(self, source_id: str) -> bool:
@@ -199,16 +196,11 @@ class _EmitScope:
         )
 
     def _pure_source_id(self, source_id: str) -> str:
-        return source_id.split('@', 1)[0] if '@' in source_id else source_id
+        return _graph_helpers.pure_source_id(source_id)
 
     @staticmethod
     def _source_pin_index(source_id: str) -> int:
-        if '@' not in source_id:
-            return 0
-        try:
-            return int(source_id.split('@', 1)[1] or 0)
-        except ValueError:
-            return 0
+        return _graph_helpers.source_pin_index(source_id)
 
     @staticmethod
     def _else_if_branch_condition_count(node: AcherionNode) -> int:

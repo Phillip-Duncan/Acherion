@@ -1,1 +1,1 @@
-"""Visual logic designer package."""
+"""Acherion designer package."""

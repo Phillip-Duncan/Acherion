@@ -1,1 +1,1 @@
-"""Visual logic catalog package."""
+"""Acherion catalog package."""

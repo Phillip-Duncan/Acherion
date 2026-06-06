@@ -169,6 +169,26 @@ class AcherionDesigner(  # pyright: ignore
         self._client_js_injected: bool = False
         self._client: Client | None = None  # type: ignore[assignment]
         self._redraw_revision: int = 0
+        self._graph_cache_revision: int = 0
+        self._connection_specs_cache_revision: int = -1
+        self._connection_specs_cache: list[dict[str, Any]] | None = None
+        self._outgoing_source_refs_cache: set[tuple[str, int]] = set()
+        self._input_pin_specs_cache: dict[
+            str,
+            tuple[int, list[dict[str, str]]],
+        ] = {}
+        self._output_pin_specs_cache: dict[
+            str,
+            tuple[int, list[dict[str, str]]],
+        ] = {}
+        self._node_bounds_cache_revision: int = -1
+        self._node_bounds_cache: dict[str, tuple[int, int, int, int]] = {}
+        self._function_box_bounds_cache: dict[
+            str,
+            tuple[int, int, int, int],
+        ] = {}
+        self._node_lookup_cache_revision: int = -1
+        self._node_lookup_cache: dict[str, AcherionNode] = {}
         dom_token = uuid.uuid4().hex[:8]
         self._frame_dom_id = f'ach-workbench-{dom_token}'
         self._viewport_dom_id = f'ach-shell-{dom_token}'

@@ -1,1 +1,1 @@
-"""Visual logic graph operations package."""
+"""Acherion graph operations package."""

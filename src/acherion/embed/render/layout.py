@@ -91,8 +91,10 @@ class _RenderLayoutMixin:
         if not owner._graph.nodes:
             return _CANVAS_WORLD_HEIGHT * 2
         max_y = max(
-            owner._node_top(n) + owner._node_height(n)
-            for n in owner._graph.nodes
+            top + height
+            for _left, top, _width, height in (
+                owner._node_bounds(n) for n in owner._graph.nodes
+            )
         )
         height: int = int(max(_CANVAS_WORLD_HEIGHT * 2, max_y + 2000))
         return height
@@ -103,10 +105,11 @@ class _RenderLayoutMixin:
     def _canvas_content_width(self: Any) -> int:
         free_right = max(
             (
-                self._node_left(n) + self._node_width(n) + 96
-                for n in self._graph.nodes
-                if bool(n.params.get('manual_position'))
-                or str(n.params.get('dock') or 'free') == 'free'
+                left + width + 96
+                for node in self._graph.nodes
+                for left, _top, width, _height in [self._node_bounds(node)]
+                if bool(node.params.get('manual_position'))
+                or str(node.params.get('dock') or 'free') == 'free'
             ),
             default=0,
         )
@@ -119,6 +122,27 @@ class _RenderLayoutMixin:
         self: Any,
         node: AcherionNode,
     ) -> tuple[int, int, int, int]:
+        revision = getattr(self, '_graph_cache_revision', None)
+        if revision is not None:
+            cache_revision = getattr(self, '_node_bounds_cache_revision', -1)
+            cache = getattr(self, '_node_bounds_cache', None)
+            if cache_revision == revision and isinstance(cache, dict):
+                cached = cache.get(node.node_id)
+                if cached is not None:
+                    return cached
+            if cache_revision != revision:
+                self._node_bounds_cache_revision = revision
+                self._node_bounds_cache = {}
+                self._function_box_bounds_cache = {}
+        bounds = self._node_bounds_uncached(node)
+        if revision is not None:
+            self._node_bounds_cache[node.node_id] = bounds
+        return bounds
+
+    def _node_bounds_uncached(
+        self: Any,
+        node: AcherionNode,
+    ) -> tuple[int, int, int, int]:
         return (
             self._node_left(node),
             self._node_top(node),
@@ -127,6 +151,27 @@ class _RenderLayoutMixin:
         )
 
     def _function_box_bounds(
+        self: Any,
+        node: AcherionNode,
+    ) -> tuple[int, int, int, int]:
+        revision = getattr(self, '_graph_cache_revision', None)
+        if revision is not None:
+            cache_revision = getattr(self, '_node_bounds_cache_revision', -1)
+            cache = getattr(self, '_function_box_bounds_cache', None)
+            if cache_revision == revision and isinstance(cache, dict):
+                cached = cache.get(node.node_id)
+                if cached is not None:
+                    return cached
+        bounds = self._function_box_bounds_uncached(node)
+        if revision is not None:
+            if getattr(self, '_node_bounds_cache_revision', -1) != revision:
+                self._node_bounds_cache_revision = revision
+                self._node_bounds_cache = {}
+                self._function_box_bounds_cache = {}
+            self._function_box_bounds_cache[node.node_id] = bounds
+        return bounds
+
+    def _function_box_bounds_uncached(
         self: Any,
         node: AcherionNode,
     ) -> tuple[int, int, int, int]:
@@ -236,13 +281,14 @@ class _RenderLayoutMixin:
         return int(self._world_to_canvas_y(self._node_world_top(node)))
 
     def _node_style(self: Any, node: AcherionNode) -> str:
+        left, top, width, height = self._node_bounds(node)
         style = (
-            f'left:{self._node_left(node)}px;'
-            f' top:{self._node_top(node)}px;'
-            f' width:{self._node_width(node)}px;'
+            f'left:{left}px;'
+            f' top:{top}px;'
+            f' width:{width}px;'
         )
         if self._is_function_box(node):
-            style += f' height:{self._node_height(node)}px;'
+            style += f' height:{height}px;'
         return style
 
     def _node_tone_class(self: Any, node: AcherionNode) -> str:
@@ -270,8 +316,7 @@ class _RenderLayoutMixin:
                     _FUNCTION_BOX_PORT_CARD_HEIGHT // 2
                 )
                 return (left + (_PIN_EDGE_OFFSET * 2), y)
-        left = owner._node_left(node)
-        top = owner._node_top(node)
+        left, top, width, _height = owner._node_bounds(node)
         top_exec_input = owner._top_exec_input_pin(node)
         top_exec_output = owner._top_exec_output_pin(node)
         has_top_exec_row = (
@@ -330,7 +375,7 @@ class _RenderLayoutMixin:
         )
         if direction == 'in':
             return (left + _PIN_EDGE_OFFSET, y)
-        return (left + self._node_width(node) - _PIN_EDGE_OFFSET, y)
+        return (left + width - _PIN_EDGE_OFFSET, y)
 
     def _connection_path_d(self: Any, spec: dict[str, Any]) -> str:
         sx, sy = self._pin_anchor(

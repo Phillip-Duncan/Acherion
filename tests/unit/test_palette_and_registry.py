@@ -347,6 +347,59 @@ def test_shell_history_undo_and_redo_restore_graph_state() -> None:
     assert [node.node_id for node in designer._graph.nodes] == ['n1', 'n2']
 
 
+def test_shell_ui_state_change_does_not_record_graph_history() -> None:
+    class _StubDesigner(acherion_designer_shell._DesignerShellMixin):
+        def __init__(self) -> None:
+            self._graph = acherion_model.AcherionGraph(
+                nodes=[
+                    acherion_model.AcherionNode(
+                        node_id='n1',
+                        kind='constant',
+                        params={'value_type': 'int', 'number_value': 1},
+                    )
+                ]
+            )
+            self._selected_node_ids = {'n1'}
+            self._selected_connection_id = None
+            self._pending_source_node_id = None
+            self._canvas_dom_id = 'canvas'
+            self._history_undo = []
+            self._history_redo = []
+            self._history_last_graph_token = ''
+            self._history_suspended = False
+            self._on_change_calls = 0
+            self._js_calls: list[str] = []
+
+        def _on_change_callback(self) -> None:
+            self._on_change_calls += 1
+
+        _on_change = _on_change_callback
+
+        def _normalize_graph(self) -> None:
+            return
+
+        def _run_client_javascript(
+            self,
+            code: str,
+            *,
+            timeout: float = 1.0,
+        ) -> None:
+            del timeout
+            self._js_calls.append(code)
+
+        def _update_hint(self, message: str | None = None) -> None:
+            del message
+
+    designer = _StubDesigner()
+    designer._reset_graph_history()
+
+    designer._notify_ui_state_change()
+
+    assert len(designer._history_undo) == 1
+    assert designer._on_change_calls == 0
+    assert designer._js_calls
+
+
 def test_help_topics_filter_matches_fuzzy_query() -> None:
     class _StubDesigner(acherion_designer_shell._DesignerShellMixin):
         def __init__(self) -> None:

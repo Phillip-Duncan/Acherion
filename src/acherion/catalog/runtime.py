@@ -21,12 +21,11 @@ def _object_matches_module_roots(
     """Return True when object module matches one allowed root."""
     if not roots:
         return True
-    obj_module = str(getattr(obj, '__module__', '') or '')
+    obj_module = str(getattr(obj, "__module__", "") or "")
     if not obj_module:
         return True
     return any(
-        obj_module == root or obj_module.startswith(f'{root}.')
-        for root in roots
+        obj_module == root or obj_module.startswith(f"{root}.") for root in roots
     )
 
 
@@ -39,7 +38,7 @@ def _is_useful_callable(
     module_key = spec.key
     if not callable(obj):
         return False
-    if name.startswith('_'):
+    if name.startswith("_"):
         return False
     if isinstance(obj, types.ModuleType):
         return False
@@ -48,12 +47,12 @@ def _is_useful_callable(
     if isinstance(obj, type):
         if spec.gate_types_with_allowlist:
             return name in spec.type_allowlist
-    if module_key.startswith('sp.'):
+    if module_key.startswith("sp."):
         type_name = type(obj).__name__
-        if type_name.endswith('_gen') or 'rv_' in type_name:
+        if type_name.endswith("_gen") or "rv_" in type_name:
             return False
-        obj_module = getattr(obj, '__module__', '') or ''
-        if obj_module and not obj_module.startswith('scipy'):
+        obj_module = getattr(obj, "__module__", "") or ""
+        if obj_module and not obj_module.startswith("scipy"):
             return False
     if not _object_matches_module_roots(obj, spec.object_module_roots):
         return False
@@ -63,27 +62,32 @@ def _is_useful_callable(
 def _annotation_text(annotation: Any) -> str:
     """Return a readable annotation string for signatures."""
     if annotation is inspect.Parameter.empty:
-        return ''
+        return ""
     try:
         text = inspect.formatannotation(annotation)
     except Exception:  # pylint: disable=broad-except
         text = str(annotation)
-    return text.replace('typing.', '').replace('collections.abc.', '')
+    return text.replace("typing.", "").replace("collections.abc.", "")
 
 
 def _parameter_type_tag(parameter: inspect.Parameter) -> str:
     """Return best-effort type tag for one callable parameter."""
     param_type = _catalog_types.annotation_to_tag(parameter.annotation)
     if (
-        param_type == 'any'
+        param_type == "any"
         and parameter.default is not inspect.Parameter.empty
         and parameter.default is not None
     ):
-        inferred_from_default = _catalog_types.value_to_type_tag(
-            parameter.default
-        )
+        inferred_from_default = _catalog_types.value_to_type_tag(parameter.default)
         if inferred_from_default in {
-            'bool', 'int', 'float', 'str', 'list', 'dict', 'set', 'range',
+            "bool",
+            "int",
+            "float",
+            "str",
+            "list",
+            "dict",
+            "set",
+            "range",
         }:
             param_type = inferred_from_default
     return param_type
@@ -92,23 +96,19 @@ def _parameter_type_tag(parameter: inspect.Parameter) -> str:
 def _format_parameter(parameter: inspect.Parameter) -> str:
     """Return readable signature text for one parameter."""
     if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
-        text = f'*{parameter.name}'
+        text = f"*{parameter.name}"
     elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
-        text = f'**{parameter.name}'
+        text = f"**{parameter.name}"
     else:
         text = parameter.name
     annotation_text = _annotation_text(parameter.annotation)
     if annotation_text:
-        text = f'{text}: {annotation_text}'
-    if (
-        parameter.default is not inspect.Parameter.empty
-        and parameter.kind
-        not in (
-            inspect.Parameter.VAR_POSITIONAL,
-            inspect.Parameter.VAR_KEYWORD,
-        )
+        text = f"{text}: {annotation_text}"
+    if parameter.default is not inspect.Parameter.empty and parameter.kind not in (
+        inspect.Parameter.VAR_POSITIONAL,
+        inspect.Parameter.VAR_KEYWORD,
     ):
-        text = f'{text} = {parameter.default!r}'
+        text = f"{text} = {parameter.default!r}"
     return text
 
 
@@ -128,7 +128,7 @@ def _signature_metadata(
         if (
             skip_bound_first
             and not skipped_first
-            and parameter.name in {'self', 'cls'}
+            and parameter.name in {"self", "cls"}
             and parameter.kind
             in (
                 inspect.Parameter.POSITIONAL_ONLY,
@@ -160,11 +160,11 @@ def _signature_metadata(
 def _introspect_entry(
     path: str,
     fn: Any,
-    module_key: str = '',
+    module_key: str = "",
 ) -> _catalog_models.FuncEntry | None:
     """Build a FuncEntry by introspecting callable *fn* at *path*."""
-    label = path.rsplit('.', 1)[-1]
-    return_type = 'any'
+    label = path.rsplit(".", 1)[-1]
+    return_type = "any"
     try:
         signature = inspect.signature(fn)
         (
@@ -177,22 +177,20 @@ def _introspect_entry(
         signature_text = f'{path}({", ".join(display_params)})'
         return_annotation_text = _annotation_text(signature.return_annotation)
         if return_annotation_text:
-            signature_text = f'{signature_text} -> {return_annotation_text}'
-        ann = _catalog_types.return_annotation_to_tag(
-            signature.return_annotation
-        )
+            signature_text = f"{signature_text} -> {return_annotation_text}"
+        ann = _catalog_types.return_annotation_to_tag(signature.return_annotation)
         return_type = ann
     except (ValueError, TypeError):
         positional_params = []
         param_types = []
         min_args = 1
         max_args = None
-        signature_text = f'{path}(...)'
+        signature_text = f"{path}(...)"
     # For class callables the return annotation of __init__/__new__ is never
     # the class itself.  Derive the type tag from the class name instead.
-    if inspect.isclass(fn) and return_type in ('any', 'object'):
+    if inspect.isclass(fn) and return_type in ("any", "object"):
         class_tag = _catalog_types.RETURN_TYPE_MAP.get(fn.__name__)
-        return_type = class_tag if class_tag else 'object'
+        return_type = class_tag if class_tag else "object"
     return _catalog_models.FuncEntry(
         path=path,
         label=label,
@@ -217,7 +215,7 @@ def _scan_module(
     for name in sorted(dir(module)):
         if name in _catalog_modules.GLOBAL_BLACKLIST:
             continue
-        if name in module_blacklist or name.startswith('_'):
+        if name in module_blacklist or name.startswith("_"):
             continue
         try:
             obj = getattr(module, name)
@@ -226,7 +224,7 @@ def _scan_module(
         if not _is_useful_callable(name, obj, loaded_module.spec):
             continue
         entry = _introspect_entry(
-            f'{prefix}{name}',
+            f"{prefix}{name}",
             obj,
             loaded_module.spec.key,
         )
@@ -250,11 +248,13 @@ def _build_catalog() -> dict[str, list[_catalog_models.FuncEntry]]:
 def clear_catalog_runtime_caches() -> None:
     """Clear cached catalog runtime lookups after module registration."""
     _build_catalog.cache_clear()
+    catalog_entry.cache_clear()
     class_methods.cache_clear()
     class_attributes.cache_clear()
     method_func_entry.cache_clear()
 
 
+@functools.lru_cache(maxsize=4096)
 def catalog_entry(path: str) -> _catalog_models.FuncEntry | None:
     """Return the FuncEntry for a given path, or None if not found."""
     for entries in _build_catalog().values():
@@ -277,8 +277,8 @@ def func_options(module_key: str) -> dict[str, str]:
     """Return {func.path: 'label - signature'} for functions in a module."""
     return {
         entry.path: (
-            f'{entry.label} - {entry.signature}'
-            + (' - class' if entry.is_class else '')
+            f"{entry.label} - {entry.signature}"
+            + (" - class" if entry.is_class else "")
         )
         for entry in _build_catalog().get(module_key, [])
     }
@@ -286,9 +286,9 @@ def func_options(module_key: str) -> dict[str, str]:
 
 def _class_object(class_path: str) -> type | None:
     """Return the runtime class object for *class_path*, or None."""
-    if class_path in {_catalog_types.NDARRAY_TYPE_TAG, 'numpy.ndarray'}:
-        np_module = _catalog_modules.catalog_module_object('np')
-        ndarray_cls = getattr(np_module, 'ndarray', None) if np_module else None
+    if class_path in {_catalog_types.NDARRAY_TYPE_TAG, "numpy.ndarray"}:
+        np_module = _catalog_modules.catalog_module_object("np")
+        ndarray_cls = getattr(np_module, "ndarray", None) if np_module else None
         return ndarray_cls if isinstance(ndarray_cls, type) else None
     entry = catalog_entry(class_path)
     if entry is not None and entry.is_class:
@@ -304,12 +304,12 @@ def _class_object(class_path: str) -> type | None:
 
 def _import_class_object(class_path: str) -> type | None:
     """Import one dotted class path directly when it is not cataloged."""
-    parts = tuple(part for part in str(class_path or '').split('.') if part)
+    parts = tuple(part for part in str(class_path or "").split(".") if part)
     if len(parts) < 2:
         return None
     for split_index in range(len(parts) - 1, 0, -1):
-        module_path = '.'.join(parts[:split_index])
-        attr_path = '.'.join(parts[split_index:])
+        module_path = ".".join(parts[:split_index])
+        attr_path = ".".join(parts[split_index:])
         try:
             module_obj = importlib.import_module(module_path)
         except ImportError:
@@ -328,7 +328,7 @@ def class_methods(class_path: str) -> dict[str, str]:
         return {}
     result: dict[str, str] = {}
     for name in sorted(dir(cls)):
-        if name.startswith('_'):
+        if name.startswith("_"):
             continue
         try:
             obj = getattr(cls, name)
@@ -342,11 +342,9 @@ def class_methods(class_path: str) -> dict[str, str]:
                 _signature_metadata(signature, skip_bound_first=True)
             )
             label = f'{name}({", ".join(display_params)})'
-            return_annotation_text = _annotation_text(
-                signature.return_annotation
-            )
+            return_annotation_text = _annotation_text(signature.return_annotation)
             if return_annotation_text:
-                label = f'{label} -> {return_annotation_text}'
+                label = f"{label} -> {return_annotation_text}"
         except (ValueError, TypeError):
             label = name
         result[name] = label
@@ -359,7 +357,7 @@ def _class_can_be_called_without_args(
 ) -> bool:
     """Return True when instance scanning is safe to attempt for *cls*."""
     del class_path
-    if str(getattr(cls, '__module__', '') or '') == 'builtins':
+    if str(getattr(cls, "__module__", "") or "") == "builtins":
         return False
     try:
         signature = inspect.signature(cls)
@@ -382,25 +380,25 @@ def _declared_public_attribute_names(cls: type) -> tuple[str, ...]:
     if dataclasses.is_dataclass(cls):
         try:
             for field in dataclasses.fields(cls):
-                field_name = str(field.name or '').strip()
-                if field_name and not field_name.startswith('_'):
+                field_name = str(field.name or "").strip()
+                if field_name and not field_name.startswith("_"):
                     names.setdefault(field_name, None)
         except TypeError:
             pass
-    namedtuple_fields = getattr(cls, '_fields', ())
+    namedtuple_fields = getattr(cls, "_fields", ())
     if isinstance(namedtuple_fields, tuple):
         for field_name in namedtuple_fields:
-            clean_name = str(field_name or '').strip()
-            if clean_name and not clean_name.startswith('_'):
+            clean_name = str(field_name or "").strip()
+            if clean_name and not clean_name.startswith("_"):
                 names.setdefault(clean_name, None)
     for klass in reversed(cls.__mro__):
-        annotations = getattr(klass, '__annotations__', None)
+        annotations = getattr(klass, "__annotations__", None)
         if isinstance(annotations, dict):
             for field_name in annotations:
-                clean_name = str(field_name or '').strip()
-                if clean_name and not clean_name.startswith('_'):
+                clean_name = str(field_name or "").strip()
+                if clean_name and not clean_name.startswith("_"):
                     names.setdefault(clean_name, None)
-        raw_slots = getattr(klass, '__slots__', ())
+        raw_slots = getattr(klass, "__slots__", ())
         if isinstance(raw_slots, str):
             slot_names = (raw_slots,)
         else:
@@ -409,8 +407,8 @@ def _declared_public_attribute_names(cls: type) -> tuple[str, ...]:
             except TypeError:
                 slot_names = ()
         for slot_name in slot_names:
-            clean_name = str(slot_name or '').strip()
-            if clean_name and not clean_name.startswith('_'):
+            clean_name = str(slot_name or "").strip()
+            if clean_name and not clean_name.startswith("_"):
                 names.setdefault(clean_name, None)
     return tuple(names)
 
@@ -432,14 +430,14 @@ def class_attributes(class_path: str) -> dict[str, str]:
             except TypeError:
                 instance_items = ()
             for name, value in instance_items:
-                if name.startswith('_'):
+                if name.startswith("_"):
                     continue
                 if not callable(value):
                     result[name] = name
         except Exception:  # pylint: disable=broad-except
             pass
     for name in sorted(dir(cls)):
-        if name.startswith('_') or name in result:
+        if name.startswith("_") or name in result:
             continue
         raw = None
         for klass in cls.__mro__:
@@ -479,25 +477,22 @@ def method_func_entry(
             max_args,
             display_params,
         ) = _signature_metadata(signature, skip_bound_first=True)
-        signature_text = (
-            f'{class_path}.{method_name}'
-            f'({", ".join(display_params)})'
-        )
+        signature_text = f"{class_path}.{method_name}" f'({", ".join(display_params)})'
         return_type = _catalog_types.return_annotation_to_tag(
             signature.return_annotation
         )
         return_annotation_text = _annotation_text(signature.return_annotation)
         if return_annotation_text:
-            signature_text = f'{signature_text} -> {return_annotation_text}'
+            signature_text = f"{signature_text} -> {return_annotation_text}"
     except (ValueError, TypeError):
         positional_params = []
         param_types = []
         min_args = 0
         max_args = None
-        signature_text = f'{class_path}.{method_name}(...)'
-        return_type = 'any'
+        signature_text = f"{class_path}.{method_name}(...)"
+        return_type = "any"
     return _catalog_models.FuncEntry(
-        path=f'{class_path}.{method_name}',
+        path=f"{class_path}.{method_name}",
         label=method_name,
         signature=signature_text,
         min_args=min_args,

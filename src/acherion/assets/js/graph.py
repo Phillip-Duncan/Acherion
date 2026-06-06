@@ -169,6 +169,138 @@ GRAPH_JS = """
             node.style.top = `${Math.round(top + origin.y)}px`;
             this.queueConnectionUpdate(stage, [nodeId]);
         },
+        applySelectionState(stage, state) {
+            if (!stage) return;
+            const selectedNodeIds = new Set(
+                Array.isArray(state?.selected_node_ids)
+                    ? state.selected_node_ids.map(value => String(value || ''))
+                    : []
+            );
+            const selectedConnectionId = String(
+                state?.selected_connection_id || ''
+            );
+            stage.querySelectorAll('.ach-node').forEach(node => {
+                const nodeId = node.dataset.nodeId || '';
+                node.classList.toggle(
+                    'ach-node-selected',
+                    selectedNodeIds.has(nodeId)
+                );
+            });
+            stage.querySelectorAll('.ach-link-path').forEach(path => {
+                path.classList.toggle(
+                    'ach-link-path-selected',
+                    !!selectedConnectionId
+                    && (path.dataset.connectionId || '') === selectedConnectionId
+                );
+            });
+        },
+        applyPendingConnectionState(stage, state) {
+            if (!stage) return;
+            stage.querySelectorAll('.ach-pin-btn-active').forEach(pin => {
+                pin.classList.remove('ach-pin-btn-active');
+            });
+            stage.querySelectorAll('.ach-pin-incompatible').forEach(row => {
+                row.classList.remove('ach-pin-incompatible');
+            });
+            const pendingNodeId = String(state?.pending_node_id || '');
+            const pendingPinIndex = String(state?.pending_pin_index ?? '');
+            if (pendingNodeId && pendingPinIndex) {
+                const activePin = this.findPin(
+                    stage,
+                    pendingNodeId,
+                    'out',
+                    pendingPinIndex
+                );
+                if (activePin) activePin.classList.add('ach-pin-btn-active');
+            }
+            const incompatibleInputs = Array.isArray(state?.incompatible_inputs)
+                ? state.incompatible_inputs
+                : [];
+            incompatibleInputs.forEach(item => {
+                const nodeId = String(item?.node_id || '');
+                const pinIndex = String(item?.pin_index ?? '');
+                if (!nodeId || !pinIndex) return;
+                const pin = this.findPin(stage, nodeId, 'in', pinIndex);
+                const row = pin ? pin.closest('.ach-wire-row') : null;
+                if (row) row.classList.add('ach-pin-incompatible');
+            });
+        },
+        applyInteractionState(stage, state) {
+            this.applySelectionState(stage, state);
+            this.applyPendingConnectionState(stage, state);
+        },
+        ensureLinksSvg(stage) {
+            if (!stage) return null;
+            let svg = stage.querySelector('.ach-links');
+            if (svg) return svg;
+            svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.classList.add('ach-links');
+            stage.insertBefore(svg, stage.firstChild);
+            return svg;
+        },
+        refreshConnectionFillState(stage) {
+            if (!stage) return;
+            stage.querySelectorAll('.ach-pin-anchor').forEach(pin => {
+                pin.classList.remove('ach-pin-btn-filled');
+            });
+            stage.querySelectorAll('.ach-link-path').forEach(path => {
+                const src = path.dataset.sourceNodeId || '';
+                const tgt = path.dataset.targetNodeId || '';
+                const outIdx = path.dataset.outputIndex || '0';
+                const inIdx = path.dataset.inputIndex || '0';
+                const sourcePin = this.findPin(stage, src, 'out', outIdx);
+                const targetPin = this.findPin(stage, tgt, 'in', inIdx);
+                if (sourcePin) sourcePin.classList.add('ach-pin-btn-filled');
+                if (targetPin) targetPin.classList.add('ach-pin-btn-filled');
+            });
+        },
+        appendConnectionPath(svg, spec, hitbox) {
+            const path = document.createElementNS(
+                'http://www.w3.org/2000/svg',
+                'path'
+            );
+            const styleTag = String(spec.style_tag || 'any');
+            path.classList.add(
+                hitbox ? 'ach-link-hitbox' : 'ach-link-path'
+            );
+            if (!hitbox) path.classList.add(`ach-link-path-type-${styleTag}`);
+            path.dataset.connectionId = String(spec.connection_id || '');
+            path.dataset.sourceNodeId = String(spec.source_node_id || '');
+            path.dataset.outputIndex = String(spec.output_index ?? 0);
+            path.dataset.targetNodeId = String(spec.target_node_id || '');
+            path.dataset.inputIndex = String(spec.input_index ?? 0);
+            path.setAttribute('d', '');
+            svg.appendChild(path);
+        },
+        applyConnectionPatch(stage, patch) {
+            if (!stage || !patch) return;
+            const removeIds = Array.isArray(patch.remove_connection_ids)
+                ? patch.remove_connection_ids
+                : [];
+            removeIds.forEach(rawId => {
+                const connectionId = String(rawId || '');
+                if (!connectionId) return;
+                const selector = '[data-connection-id="'
+                    + this.selectorLiteral(connectionId)
+                    + '"]';
+                stage.querySelectorAll(selector).forEach(path => path.remove());
+            });
+            const added = Array.isArray(patch.add_connections)
+                ? patch.add_connections
+                : [];
+            if (added.length) {
+                const svg = this.ensureLinksSvg(stage);
+                if (svg) {
+                    added.forEach(spec => {
+                        this.appendConnectionPath(svg, spec, false);
+                        this.appendConnectionPath(svg, spec, true);
+                    });
+                }
+            }
+            this.queueConnectionUpdate(stage);
+            this.refreshConnectionFillState(stage);
+            if (patch.state) this.applyInteractionState(stage, patch.state);
+        },
         updateRubberBand(vp, x1, y1, x2, y2) {
             let rb = vp.querySelector('.ach-rubber-band');
             if (!rb) {

@@ -1,1 +1,1 @@
-"""Visual logic compiler package."""
+"""Acherion compiler package."""

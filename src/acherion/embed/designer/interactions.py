@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from nicegui import ui
 
@@ -24,6 +24,35 @@ from acherion.model import (
 )
 
 
+def _event_args_dict(event: Any) -> dict[str, Any]:
+    """Return NiceGUI event args as a plain dict across client versions."""
+    raw_args = getattr(event, "args", None) if event is not None else None
+    if isinstance(raw_args, dict):
+        return dict(raw_args)
+    if isinstance(raw_args, str):
+        try:
+            decoded = json.loads(raw_args)
+        except json.JSONDecodeError:
+            return {}
+        return dict(decoded) if isinstance(decoded, dict) else {}
+    if isinstance(raw_args, (list, tuple)):
+        if len(raw_args) == 1:
+            first_arg = raw_args[0]
+            if isinstance(first_arg, dict):
+                return dict(first_arg)
+            if isinstance(first_arg, str):
+                try:
+                    decoded = json.loads(first_arg)
+                except json.JSONDecodeError:
+                    return {}
+                return dict(decoded) if isinstance(decoded, dict) else {}
+        try:
+            return dict(raw_args)
+        except (TypeError, ValueError):
+            return {}
+    return {}
+
+
 class _DesignerInteractionsMixin:
     """Selection, drag, grouping, and JS event wiring helpers."""
 
@@ -31,13 +60,43 @@ class _DesignerInteractionsMixin:
     _ctx_menu_node_id: str | None = None
     _selected_connection_id: str | None = None
 
+    def _notify_interaction_state_change(
+        self: Any,
+        *,
+        refresh_graph: bool = False,
+    ) -> None:
+        notify_ui_state_change = getattr(self, "_notify_ui_state_change", None)
+        if callable(notify_ui_state_change):
+            notify_ui_state_change(refresh_graph=refresh_graph)
+            return
+        notify_change = getattr(self, "_notify_change", None)
+        if callable(notify_change):
+            notify_change()
+            return
+        if refresh_graph and hasattr(self, "refresh"):
+            self.refresh()
+        elif hasattr(self, "refresh"):
+            self.refresh()
+        update_hint = getattr(self, "_update_hint", None)
+        if callable(update_hint):
+            update_hint()
+
     def _node_by_id(
         self: Any,
         node_id: str | None,
     ) -> AcherionNode | None:
         if not node_id:
             return None
-        pure_id = node_id.split('@')[0] if '@' in node_id else node_id
+        pure_id = node_id.split("@")[0] if "@" in node_id else node_id
+        revision = getattr(self, "_graph_cache_revision", None)
+        if revision is not None:
+            cached_revision = getattr(self, "_node_lookup_cache_revision", -1)
+            node_lookup = getattr(self, "_node_lookup_cache", None)
+            if cached_revision != revision or not isinstance(node_lookup, dict):
+                node_lookup = {node.node_id: node for node in self._graph.nodes}
+                self._node_lookup_cache = node_lookup
+                self._node_lookup_cache_revision = revision
+            return cast(dict[str, AcherionNode], node_lookup).get(pure_id)
         return next(
             (node for node in self._graph.nodes if node.node_id == pure_id),
             None,
@@ -45,13 +104,13 @@ class _DesignerInteractionsMixin:
 
     def _source_label(self: Any, source_id: str | None) -> str:
         if not source_id:
-            return 'Unconnected'
+            return "Unconnected"
         node = self._node_by_id(source_id)
         if node is None:
-            return 'Unconnected'
+            return "Unconnected"
         base = node.title or _template_title(node.kind)
-        if source_id and '@' in source_id:
-            pin_idx = int(source_id.split('@', 1)[1])
+        if source_id and "@" in source_id:
+            pin_idx = int(source_id.split("@", 1)[1])
             specs = self._output_pin_specs(node)
             if pin_idx < len(specs):
                 return f'{base} ({specs[pin_idx]["label"]})'
@@ -62,22 +121,22 @@ class _DesignerInteractionsMixin:
         target_node_id: str,
         pin_id: str,
         *,
-        source_id: str = '',
+        source_id: str = "",
     ) -> str:
-        if pin_id == 'exec_source' and source_id:
-            return f'{target_node_id}@@{pin_id}@@{source_id}'
-        return f'{target_node_id}@@{pin_id}'
+        if pin_id == "exec_source" and source_id:
+            return f"{target_node_id}@@{pin_id}@@{source_id}"
+        return f"{target_node_id}@@{pin_id}"
 
     @staticmethod
     def _split_connection_id(
         connection_id: str,
     ) -> tuple[str, str, str] | None:
-        if '@@' not in connection_id:
+        if "@@" not in connection_id:
             return None
-        parts = connection_id.split('@@')
+        parts = connection_id.split("@@")
         if len(parts) == 2:
             target_id, pin_id = parts
-            return (target_id, pin_id, '')
+            return (target_id, pin_id, "")
         if len(parts) == 3:
             target_id, pin_id, source_id = parts
             return (target_id, pin_id, source_id)
@@ -85,70 +144,66 @@ class _DesignerInteractionsMixin:
 
     def _start_drag_node(self: Any, node_id: str, event: Any = None) -> None:
         self._drag_node_id = node_id
-        args = dict((event.args if event is not None else None) or {})
-        self._drag_offset_x = int(args.get('offset_x') or _DROP_X_OFFSET)
-        self._drag_offset_y = int(args.get('offset_y') or _DROP_Y_OFFSET)
+        args = _event_args_dict(event)
+        self._drag_offset_x = int(args.get("offset_x") or _DROP_X_OFFSET)
+        self._drag_offset_y = int(args.get("offset_y") or _DROP_Y_OFFSET)
         if self._canvas_el is not None:
-            self._canvas_el.classes(add='ach-canvas-dragging')
+            self._canvas_el.classes(add="ach-canvas-dragging")
         self._update_hint()
 
     def _finish_drag_node(self: Any, event: Any) -> None:
         """Persist final drag positions from JS mouseup handler."""
-        args = dict(event.args or {})
+        args = _event_args_dict(event)
 
-        if 'rubber_node_ids' in args:
+        if "rubber_node_ids" in args:
             valid = {node.node_id for node in self._graph.nodes}
             new_sel = {
                 node_id
-                for node_id in (args['rubber_node_ids'] or [])
+                for node_id in (args["rubber_node_ids"] or [])
                 if node_id in valid
             }
-            if args.get('add'):
+            if args.get("add"):
                 self._selected_node_ids.update(new_sel)
             else:
                 self._selected_node_ids = new_sel
-            self._notify_change()
+            self._notify_interaction_state_change()
             self._focus_canvas_shortcuts()
             return
 
-        node_id = str(args.get('node_id') or self._drag_node_id or '')
+        node_id = str(args.get("node_id") or self._drag_node_id or "")
         self._drag_node_id = None
         if self._canvas_el is not None:
-            self._canvas_el.classes(remove='ach-canvas-dragging')
+            self._canvas_el.classes(remove="ach-canvas-dragging")
         if not node_id:
             return
         dragged = self._node_by_id(node_id)
         if dragged is None:
             return
-        raw_left = args.get('left')
-        raw_top = args.get('top')
+        raw_left = args.get("left")
+        raw_top = args.get("top")
         if raw_left is None or raw_top is None:
             self._update_hint()
             return
         left, top = self._snap_grid_point(raw_left, raw_top)
-        dragged.params['x'] = left
-        dragged.params['y'] = top
-        dragged.params['dock'] = 'free'
-        dragged.params['manual_position'] = True
-        moved_nodes: list[tuple[AcherionNode, int, int]] = [
-            (dragged, left, top)
-        ]
-        for move in list(args.get('group_moves') or []):
-            group_id = str(move.get('node_id') or '')
-            group_left = move.get('left')
-            group_top = move.get('top')
+        dragged.params["x"] = left
+        dragged.params["y"] = top
+        dragged.params["dock"] = "free"
+        dragged.params["manual_position"] = True
+        moved_nodes: list[tuple[AcherionNode, int, int]] = [(dragged, left, top)]
+        for move in list(args.get("group_moves") or []):
+            group_id = str(move.get("node_id") or "")
+            group_left = move.get("left")
+            group_top = move.get("top")
             if not group_id or group_left is None or group_top is None:
                 continue
             group_node = self._node_by_id(group_id)
             if group_node is None:
                 continue
-            group_node.params['x'] = int(group_left)
-            group_node.params['y'] = int(group_top)
-            group_node.params['dock'] = 'free'
-            group_node.params['manual_position'] = True
-            moved_nodes.append(
-                (group_node, int(group_left), int(group_top))
-            )
+            group_node.params["x"] = int(group_left)
+            group_node.params["y"] = int(group_top)
+            group_node.params["dock"] = "free"
+            group_node.params["manual_position"] = True
+            moved_nodes.append((group_node, int(group_left), int(group_top)))
         for moved_node, moved_left, moved_top in moved_nodes:
             self._assign_node_to_containing_function_box(
                 moved_node,
@@ -159,9 +214,9 @@ class _DesignerInteractionsMixin:
 
     def _toggle_node_selection(self: Any, event: Any) -> None:
         """Toggle one node or select whole group on normal click."""
-        args = dict(event.args or {})
-        node_id = str(args.get('node_id') or '')
-        toggle = bool(args.get('toggle'))
+        args = _event_args_dict(event)
+        node_id = str(args.get("node_id") or "")
+        toggle = bool(args.get("toggle"))
         valid = {node.node_id for node in self._graph.nodes}
         if node_id not in valid:
             return
@@ -171,7 +226,7 @@ class _DesignerInteractionsMixin:
                 self._selected_node_ids.discard(node_id)
             else:
                 self._selected_node_ids.add(node_id)
-            self._notify_change()
+            self._notify_interaction_state_change()
             self._focus_canvas_shortcuts()
             return
 
@@ -187,23 +242,23 @@ class _DesignerInteractionsMixin:
             return
         self._selected_connection_id = None
         self._selected_node_ids = group_ids
-        self._notify_change()
+        self._notify_interaction_state_change()
         self._focus_canvas_shortcuts()
 
     def _selection_ids_for_node(self: Any, node: AcherionNode) -> set[str]:
-        group_name = str(node.params.get('group') or '').strip()
+        group_name = str(node.params.get("group") or "").strip()
         if not group_name:
             return {node.node_id}
         return {
             current.node_id
             for current in self._graph.nodes
-            if str(current.params.get('group') or '').strip() == group_name
+            if str(current.params.get("group") or "").strip() == group_name
         }
 
     def _handle_node_contextmenu(self: Any, event: Any) -> None:
         """Show context menu for right-clicked node."""
-        args = dict(event.args or {})
-        node_id = str(args.get('node_id') or '')
+        args = _event_args_dict(event)
+        node_id = str(args.get("node_id") or "")
         valid = {node.node_id for node in self._graph.nodes}
         if node_id not in valid:
             return
@@ -213,15 +268,15 @@ class _DesignerInteractionsMixin:
                 return
             self._selected_node_ids = self._selection_ids_for_node(node)
         self._ctx_menu_node_id = node_id
-        self._ctx_menu_cx = int(args.get('cx') or 0)
-        self._ctx_menu_cy = int(args.get('cy') or 0)
+        self._ctx_menu_cx = int(args.get("cx") or 0)
+        self._ctx_menu_cy = int(args.get("cy") or 0)
         self._reset_context_menu_queries()
         self.refresh()
         self._update_hint()
 
     def _reset_context_menu_queries(self: Any) -> None:
-        self._ctx_menu_query = ''
-        self._ctx_align_query = ''
+        self._ctx_menu_query = ""
+        self._ctx_align_query = ""
 
     def _ctx_dismiss(self: Any) -> None:
         """Dismiss context menu without changing selection."""
@@ -229,15 +284,15 @@ class _DesignerInteractionsMixin:
         self._reset_context_menu_queries()
         if self._ctx_container_el is not None:
             self._ctx_container_el.clear()
-        frame_dom_id = getattr(self, '_frame_dom_id', '')
+        frame_dom_id = getattr(self, "_frame_dom_id", "")
         if frame_dom_id:
             self._run_client_javascript(
-                f'(function(){{'
-                f'const frame=document.getElementById({frame_dom_id!r});'
-                f'if(!frame)return;'
+                f"(function(){{"
+                f"const frame=document.getElementById({frame_dom_id!r});"
+                f"if(!frame)return;"
                 f'frame.querySelectorAll(".ach-ctx-menu,.ach-ctx-backdrop")'
-                f'.forEach((el) => el.remove());'
-                f'}})()'
+                f".forEach((el) => el.remove());"
+                f"}})()"
             )
         self._update_hint()
 
@@ -245,7 +300,7 @@ class _DesignerInteractionsMixin:
         """Return next available default group label."""
         index = 1
         while True:
-            name = f'Group {index}'
+            name = f"Group {index}"
             if name not in self._graph.groups:
                 return name
             index += 1
@@ -253,26 +308,26 @@ class _DesignerInteractionsMixin:
     def _next_default_function_name(self: Any) -> str:
         """Return next available default function-box title."""
         used = {
-            str(node.params.get('function_name') or '')
+            str(node.params.get("function_name") or "")
             for node in self._manual_nodes()
             if self._is_function_box(node)
         }
         index = 1
         while True:
-            title = f'Function {index}'
-            if self._sanitize_identifier(title, 'function_box') not in used:
+            title = f"Function {index}"
+            if self._sanitize_identifier(title, "function_box") not in used:
                 return title
             index += 1
 
     def _selected_group_name(self: Any) -> str:
         """Return shared selected group name when selection has exactly one."""
         groups = {
-            str(node.params.get('group') or '').strip()
+            str(node.params.get("group") or "").strip()
             for node in self._graph.nodes
             if node.node_id in self._selected_node_ids
-            and str(node.params.get('group') or '').strip()
+            and str(node.params.get("group") or "").strip()
         }
-        return next(iter(groups)) if len(groups) == 1 else ''
+        return next(iter(groups)) if len(groups) == 1 else ""
 
     def _rename_group(
         self: Any,
@@ -283,32 +338,32 @@ class _DesignerInteractionsMixin:
         old_name = old_name.strip()
         new_name = new_name.strip()
         if not old_name or old_name not in self._graph.groups:
-            return (False, 'Group no longer exists.')
+            return (False, "Group no longer exists.")
         if not new_name:
-            return (False, 'Enter a group name.')
+            return (False, "Enter a group name.")
         if new_name != old_name and new_name in self._graph.groups:
-            return (False, f'Group {new_name} already exists.')
+            return (False, f"Group {new_name} already exists.")
         if new_name == old_name:
-            return (True, f'Group name remains {new_name}.')
+            return (True, f"Group name remains {new_name}.")
         colour = self._graph.groups.pop(old_name)
         self._graph.groups[new_name] = colour
         for node in self._graph.nodes:
-            if str(node.params.get('group') or '').strip() == old_name:
-                node.params['group'] = new_name
+            if str(node.params.get("group") or "").strip() == old_name:
+                node.params["group"] = new_name
         self._notify_change()
-        return (True, f'Renamed group to {new_name}.')
+        return (True, f"Renamed group to {new_name}.")
 
     def _open_new_group_dialog(self: Any) -> None:
         """Create a group from selection using next default name."""
         node_ids = set(self._selected_node_ids)
         self._ctx_dismiss()
         if not node_ids:
-            self._notify_ui('Select nodes first.', type='warning')
+            self._notify_ui("Select nodes first.", type="warning")
             return
         name = self._next_default_group_name()
         self._create_group(name, node_ids)
         self._focus_canvas_shortcuts()
-        self._notify_ui(f'Created group {name}.', type='positive')
+        self._notify_ui(f"Created group {name}.", type="positive")
 
     def _open_rename_group_dialog(self: Any) -> None:
         """Open rename dialog for currently selected group."""
@@ -316,40 +371,39 @@ class _DesignerInteractionsMixin:
         self._ctx_dismiss()
         if not group_name:
             self._notify_ui(
-                'Select nodes from one group first.',
-                type='warning',
+                "Select nodes from one group first.",
+                type="warning",
             )
             return
         if self._overlay_host_el is None:
             return
         with self._overlay_host_el:
             dlg = ui.dialog()
-            with dlg, ui.card().style(
-                'background:#000000; border:1px solid #2f3336;'
-                ' border-radius:12px; padding:20px; min-width:320px;'
+            with (
+                dlg,
+                ui.card().style(
+                    "background:#000000; border:1px solid #2f3336;"
+                    " border-radius:12px; padding:20px; min-width:320px;"
+                ),
             ):
-                ui.label('Rename group').classes('text-base font-bold oe-text')
-                name_input = ui.input('Group name', value=group_name).classes(
-                    'w-full'
-                )
-                with ui.row().classes('justify-end gap-2 w-full pt-2'):
-                    ui.button('Close', on_click=dlg.close).props('flat')
+                ui.label("Rename group").classes("text-base font-bold oe-text")
+                name_input = ui.input("Group name", value=group_name).classes("w-full")
+                with ui.row().classes("justify-end gap-2 w-full pt-2"):
+                    ui.button("Close", on_click=dlg.close).props("flat")
 
                     def _save() -> None:
                         ok, message = self._rename_group(
                             group_name,
-                            str(name_input.value or ''),
+                            str(name_input.value or ""),
                         )
                         self._notify_ui(
                             message,
-                            type='positive' if ok else 'warning',
+                            type="positive" if ok else "warning",
                         )
                         if ok:
                             dlg.close()
 
-                    ui.button('Save', on_click=_save).classes(
-                        'oe-btn-primary'
-                    )
+                    ui.button("Save", on_click=_save).classes("oe-btn-primary")
         dlg.open()
 
     def _open_extract_function_dialog(self: Any) -> None:
@@ -362,7 +416,7 @@ class _DesignerInteractionsMixin:
         )
         self._notify_ui(
             message,
-            type='positive' if ok else 'warning',
+            type="positive" if ok else "warning",
         )
 
     def _ctx_add_to_group(self: Any, name: str) -> None:
@@ -385,7 +439,7 @@ class _DesignerInteractionsMixin:
         ok, message = self._layout_selected_nodes(command)
         self._notify_ui(
             message,
-            type='positive' if ok else 'warning',
+            type="positive" if ok else "warning",
         )
 
     def _ctx_clear_pins(self: Any) -> None:
@@ -393,20 +447,20 @@ class _DesignerInteractionsMixin:
         node_ids = set(self._selected_node_ids)
         self._ctx_dismiss()
         if not node_ids:
-            self._notify_ui('Select nodes first.', type='warning')
+            self._notify_ui("Select nodes first.", type="warning")
             return
         changed = self._clear_node_pins(node_ids)
         if changed:
             self._notify_change()
         count = len(node_ids)
-        noun = 'node' if count == 1 else 'nodes'
+        noun = "node" if count == 1 else "nodes"
         self._notify_ui(
             (
-                f'Cleared pins on {count} {noun}.'
-                if changed else
-                f'Pins are already clear on {count} {noun}.'
+                f"Cleared pins on {count} {noun}."
+                if changed
+                else f"Pins are already clear on {count} {noun}."
             ),
-            type='positive' if changed else 'warning',
+            type="positive" if changed else "warning",
         )
         self._focus_canvas_shortcuts()
 
@@ -418,21 +472,21 @@ class _DesignerInteractionsMixin:
         self._delete_nodes_batch(to_delete)
 
     def _handle_viewport_mousemove(self: Any, event: Any) -> None:
-        args = dict(event.args or {})
-        if str(args.get('action') or '') != 'start':
+        args = _event_args_dict(event)
+        if str(args.get("action") or "") != "start":
             return
-        node_id = str(args.get('node_id') or '')
+        node_id = str(args.get("node_id") or "")
         if not node_id:
             return
         self._start_drag_node(node_id, event)
 
     def _handle_canvas_click(self: Any, event: Any) -> None:
-        args = dict(event.args or {})
-        action = str(args.get('action') or '')
-        if action == 'select':
-            self._select_connection(str(args.get('connection_id') or ''))
+        args = _event_args_dict(event)
+        action = str(args.get("action") or "")
+        if action == "select":
+            self._select_connection(str(args.get("connection_id") or ""))
             return
-        if action == 'clear':
+        if action == "clear":
             ctx_was_open = self._ctx_menu_node_id is not None
             self._ctx_menu_node_id = None
             changed = (
@@ -443,21 +497,22 @@ class _DesignerInteractionsMixin:
             self._selected_connection_id = None
             self._selected_node_ids.clear()
             if changed:
-                self.refresh()
+                self._notify_interaction_state_change()
             self._update_hint()
 
     def _handle_canvas_context(self: Any, event: Any) -> None:
-        connection_id = str((event.args or {}).get('connection_id') or '')
+        args = _event_args_dict(event)
+        connection_id = str(args.get("connection_id") or "")
         if connection_id:
             self._delete_connection(connection_id)
 
     def _handle_canvas_drop(self: Any, event: Any) -> None:
-        args = dict(event.args or {})
-        spec_data = str(args.get('spec') or '').strip()
-        raw_x = args.get('x')
-        raw_y = args.get('y')
-        x = _MANUAL_X if raw_x in (None, '') else int(str(raw_x))
-        y = _MANUAL_Y if raw_y in (None, '') else int(str(raw_y))
+        args = _event_args_dict(event)
+        spec_data = str(args.get("spec") or "").strip()
+        raw_x = args.get("x")
+        raw_y = args.get("y")
+        x = _MANUAL_X if raw_x in (None, "") else int(str(raw_x))
+        y = _MANUAL_Y if raw_y in (None, "") else int(str(raw_y))
         x, y = self._snap_grid_point(x, y)
         if spec_data:
             try:
@@ -468,52 +523,52 @@ class _DesignerInteractionsMixin:
                 self._add_variable_node_at_position(spec, x, y)
                 self._focus_canvas_shortcuts()
                 return
-        kind = str(args.get('kind') or '')
+        kind = str(args.get("kind") or "")
         if not is_acherion_manual_add_kind(kind):
             return
         self._add_node_at_position(kind, x, y)
         self._focus_canvas_shortcuts()
 
     def _handle_canvas_key(self: Any, event: Any) -> None:
-        args = dict(event.args or {})
-        shortcut_id = str(args.get('shortcut_id') or '')
-        key = str(args.get('key') or '')
-        raw_anchor_x = args.get('anchor_x')
-        raw_anchor_y = args.get('anchor_y')
-        anchor_x = None if raw_anchor_x in (None, '') else int(raw_anchor_x)
-        anchor_y = None if raw_anchor_y in (None, '') else int(raw_anchor_y)
-        if shortcut_id == 'copy_selection':
+        args = _event_args_dict(event)
+        shortcut_id = str(args.get("shortcut_id") or "")
+        key = str(args.get("key") or "")
+        raw_anchor_x = args.get("anchor_x")
+        raw_anchor_y = args.get("anchor_y")
+        anchor_x = None if raw_anchor_x in (None, "") else int(raw_anchor_x)
+        anchor_y = None if raw_anchor_y in (None, "") else int(raw_anchor_y)
+        if shortcut_id == "copy_selection":
             ok, message = self._copy_selection_to_clipboard()
             self._notify_ui(
                 message,
-                type='positive' if ok else 'warning',
+                type="positive" if ok else "warning",
             )
             return
-        if shortcut_id == 'paste_selection':
+        if shortcut_id == "paste_selection":
             ok, message = self._paste_copied_nodes(
                 anchor_x=anchor_x,
                 anchor_y=anchor_y,
             )
             self._notify_ui(
                 message,
-                type='positive' if ok else 'warning',
+                type="positive" if ok else "warning",
             )
             return
-        if shortcut_id == 'undo_selection':
+        if shortcut_id == "undo_selection":
             ok, message = self._undo_graph_change()
             self._notify_ui(
                 message,
-                type='positive' if ok else 'warning',
+                type="positive" if ok else "warning",
             )
             return
-        if shortcut_id == 'redo_selection':
+        if shortcut_id == "redo_selection":
             ok, message = self._redo_graph_change()
             self._notify_ui(
                 message,
-                type='positive' if ok else 'warning',
+                type="positive" if ok else "warning",
             )
             return
-        if shortcut_id == 'delete_selection_primary':
+        if shortcut_id == "delete_selection_primary":
             if self._selected_node_ids:
                 to_delete = set(self._selected_node_ids)
                 self._selected_node_ids.clear()
@@ -521,110 +576,107 @@ class _DesignerInteractionsMixin:
             else:
                 self._delete_selected_connection()
             return
-        if shortcut_id == 'clear_selection' or key == 'Escape':
+        if shortcut_id == "clear_selection" or key == "Escape":
             if self._selected_node_ids:
                 self._selected_node_ids.clear()
-                self.refresh()
-                self._update_hint()
+                self._notify_interaction_state_change()
             elif self._selected_connection_id is not None:
                 self._selected_connection_id = None
-                self.refresh()
-                self._update_hint()
+                self._notify_interaction_state_change()
 
     def _attach_viewport_events(self: Any, viewport: Any) -> None:
         viewport.on(
-            'mousedown',
+            "mousedown",
             lambda _e: None,
             js_handler=(
-                '(e) => {'
-                'const vp = e.currentTarget;'
-                'vp.dataset.cursorClientX = String(e.clientX);'
-                'vp.dataset.cursorClientY = String(e.clientY);'
-                'if (e.button !== 0) return;'
-                'if (e.target.closest(".ach-node")) return;'
+                "(e) => {"
+                "const vp = e.currentTarget;"
+                "vp.dataset.cursorClientX = String(e.clientX);"
+                "vp.dataset.cursorClientY = String(e.clientY);"
+                "if (e.button !== 0) return;"
                 'if (e.target.closest(".ach-link-hitbox")) return;'
                 'if (e.target.closest(".ach-palette-shell")) return;'
-                'const h = window.__oeAcherion;'
+                "const h = window.__oeAcherion;"
                 'if (h && h.matchesShortcut(e, "box_select_add", "drag")) {'
-                'h.ensureViewportState(vp);'
-                'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
+                "h.ensureViewportState(vp);"
+                "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
                 'vp.dataset.rubberActive = "1";'
-                'vp.dataset.rubberStartX = String(pt.x);'
-                'vp.dataset.rubberStartY = String(pt.y);'
+                "vp.dataset.rubberStartX = String(pt.x);"
+                "vp.dataset.rubberStartY = String(pt.y);"
                 'vp.dataset.rubberShift = "1";'
                 'vp.classList.add("ach-shell-selecting");'
-                'return;'
-                '}'
+                "return;"
+                "}"
                 'if (h && h.matchesShortcut(e, "box_select", "drag")) {'
-                'h.ensureViewportState(vp);'
-                'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
+                "h.ensureViewportState(vp);"
+                "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
                 'vp.dataset.rubberActive = "1";'
-                'vp.dataset.rubberStartX = String(pt.x);'
-                'vp.dataset.rubberStartY = String(pt.y);'
+                "vp.dataset.rubberStartX = String(pt.x);"
+                "vp.dataset.rubberStartY = String(pt.y);"
                 'vp.dataset.rubberShift = "0";'
                 'vp.classList.add("ach-shell-selecting");'
-                'return;'
-                '}'
+                "return;"
+                "}"
                 'vp.dataset.panActive = "1";'
-                'vp.dataset.panLastX = String(e.clientX);'
-                'vp.dataset.panLastY = String(e.clientY);'
+                "vp.dataset.panLastX = String(e.clientX);"
+                "vp.dataset.panLastY = String(e.clientY);"
                 'vp.classList.add("ach-shell-panning");'
-                '}'
+                "}"
             ),
         )
         viewport.on(
-            'mousemove',
+            "mousemove",
             self._handle_viewport_mousemove,
             js_handler=(
-                '(e) => {'
-                'const vp = e.currentTarget;'
-                'vp.dataset.cursorClientX = String(e.clientX);'
-                'vp.dataset.cursorClientY = String(e.clientY);'
-                'const h = window.__oeAcherion;'
-                'if (h) h.ensureViewportState(vp);'
+                "(e) => {"
+                "const vp = e.currentTarget;"
+                "vp.dataset.cursorClientX = String(e.clientX);"
+                "vp.dataset.cursorClientY = String(e.clientY);"
+                "const h = window.__oeAcherion;"
+                "if (h) h.ensureViewportState(vp);"
                 'const cid = vp.dataset.dragCandidateNodeId || "";'
-                'if (cid && h) {'
+                "if (cid && h) {"
                 'const sx = parseFloat(vp.dataset.dragStartClientX || "0");'
                 'const sy = parseFloat(vp.dataset.dragStartClientY || "0");'
-                'const moved = Math.hypot(e.clientX - sx, e.clientY - sy);'
+                "const moved = Math.hypot(e.clientX - sx, e.clientY - sy);"
                 'let aid = vp.dataset.dragNodeId || "";'
-                'if (!aid && moved >= 4) {'
-                'aid = cid;'
-                'vp.dataset.dragNodeId = aid;'
+                "if (!aid && moved >= 4) {"
+                "aid = cid;"
+                "vp.dataset.dragNodeId = aid;"
                 'vp.classList.add("ach-shell-dragging-node");'
-                'const stage = h.stage(vp);'
-                'const nd = stage ? h.findNode(stage, aid) : null;'
+                "const stage = h.stage(vp);"
+                "const nd = stage ? h.findNode(stage, aid) : null;"
                 'if (nd) nd.classList.add("ach-node-dragging");'
-                'if (stage && nd) {'
+                "if (stage && nd) {"
                 'const selNds = Array.from(stage.querySelectorAll(".ach-node-selected")).map(n=>n.dataset.nodeId);'
-                'if (selNds.includes(aid) && selNds.length > 1) {'
+                "if (selNds.includes(aid) && selNds.length > 1) {"
                 'const dl=parseFloat(nd.style.left||"0"),dt=parseFloat(nd.style.top||"0");'
-                'const grp=selNds.filter(id=>id!==aid).map(id=>{'
-                'const gn=h.findNode(stage,id);'
+                "const grp=selNds.filter(id=>id!==aid).map(id=>{"
+                "const gn=h.findNode(stage,id);"
                 'return gn?{id,rx:parseFloat(gn.style.left||"0")-dl,ry:parseFloat(gn.style.top||"0")-dt}:null;'
-                '}).filter(Boolean);'
-                'vp.dataset.dragGroupData=JSON.stringify(grp);'
+                "}).filter(Boolean);"
+                "vp.dataset.dragGroupData=JSON.stringify(grp);"
                 '} else if ((nd.dataset.isFunctionBox || "") === "1") {'
-                'const fid = nd.dataset.nodeId || aid;'
+                "const fid = nd.dataset.nodeId || aid;"
                 'const dl=parseFloat(nd.style.left||"0"),dt=parseFloat(nd.style.top||"0");'
-                'const inBox=(n,targetId)=>{'
+                "const inBox=(n,targetId)=>{"
                 'let pid=n.dataset.parentFunctionId||"";'
-                'let guard=0;'
-                'while(pid && guard<32){'
-                'if(pid===targetId)return true;'
-                'const parent=h.findNode(stage,pid);'
+                "let guard=0;"
+                "while(pid && guard<32){"
+                "if(pid===targetId)return true;"
+                "const parent=h.findNode(stage,pid);"
                 'pid=parent?(parent.dataset.parentFunctionId||""):"";'
-                'guard+=1;'
-                '}'
-                'return false;'
-                '};'
+                "guard+=1;"
+                "}"
+                "return false;"
+                "};"
                 'const grp=Array.from(stage.querySelectorAll(".ach-node")).filter(n=>'
                 '(n.dataset.nodeId||"")!==aid && inBox(n,fid)).map(n=>({'
                 'id:n.dataset.nodeId||"",'
                 'rx:parseFloat(n.style.left||"0")-dl,'
                 'ry:parseFloat(n.style.top||"0")-dt'
-                '})).filter(item=>item.id);'
-                'vp.dataset.dragGroupData=JSON.stringify(grp);'
+                "})).filter(item=>item.id);"
+                "vp.dataset.dragGroupData=JSON.stringify(grp);"
                 '} else if ((nd.dataset.groupToken || "")) {'
                 'const gt = nd.dataset.groupToken || "";'
                 'const dl=parseFloat(nd.style.left||"0"),dt=parseFloat(nd.style.top||"0");'
@@ -633,226 +685,226 @@ class _DesignerInteractionsMixin:
                 'id:n.dataset.nodeId||"",'
                 'rx:parseFloat(n.style.left||"0")-dl,'
                 'ry:parseFloat(n.style.top||"0")-dt'
-                '})).filter(item=>item.id);'
-                'vp.dataset.dragGroupData=JSON.stringify(grp);'
+                "})).filter(item=>item.id);"
+                "vp.dataset.dragGroupData=JSON.stringify(grp);"
                 '} else { vp.dataset.dragGroupData="[]"; }'
                 '} else { vp.dataset.dragGroupData="[]"; }'
                 'emit({action:"start",node_id:aid,'
                 'offset_x:Math.round(parseFloat(vp.dataset.dragOffsetX||"0")),'
                 'offset_y:Math.round(parseFloat(vp.dataset.dragOffsetY||"0"))});'
-                '}'
-                'if (aid) {'
-                'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
-                'const snapped = h.snapPoint('
-                'vp,'
+                "}"
+                "if (aid) {"
+                "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
+                "const snapped = h.snapPoint("
+                "vp,"
                 'pt.x - parseFloat(vp.dataset.dragOffsetX||"0"),'
                 'pt.y - parseFloat(vp.dataset.dragOffsetY||"0")'
-                ');'
-                'const l = snapped.x;'
-                'const t = snapped.y;'
-                'const stage = h.stage(vp);'
-                'if (stage) {'
-                'h.moveNode(stage, aid, l, t);'
+                ");"
+                "const l = snapped.x;"
+                "const t = snapped.y;"
+                "const stage = h.stage(vp);"
+                "if (stage) {"
+                "h.moveNode(stage, aid, l, t);"
                 'const grp=JSON.parse(vp.dataset.dragGroupData||"[]");'
-                'grp.forEach(item=>h.moveNode(stage,item.id,l+item.rx,t+item.ry));'
-                '}'
-                'return;'
-                '}'
-                '}'
+                "grp.forEach(item=>h.moveNode(stage,item.id,l+item.rx,t+item.ry));"
+                "}"
+                "return;"
+                "}"
+                "}"
                 'if (vp.dataset.rubberActive==="1" && h) {'
-                'const pt=h.worldPoint(vp,e.clientX,e.clientY);'
+                "const pt=h.worldPoint(vp,e.clientX,e.clientY);"
                 'h.updateRubberBand(vp,parseFloat(vp.dataset.rubberStartX||"0"),parseFloat(vp.dataset.rubberStartY||"0"),pt.x,pt.y);'
-                'return;'
-                '}'
+                "return;"
+                "}"
                 'if (vp.dataset.panActive !== "1") return;'
                 'const stage = vp.querySelector(".ach-canvas");'
-                'if (!stage) return;'
+                "if (!stage) return;"
                 'const lx = parseFloat(vp.dataset.panLastX || "0");'
                 'const ly = parseFloat(vp.dataset.panLastY || "0");'
-                'const dx = e.clientX - lx, dy = e.clientY - ly;'
+                "const dx = e.clientX - lx, dy = e.clientY - ly;"
                 'const px = parseFloat(vp.dataset.panX || "0") + dx;'
                 'const py = parseFloat(vp.dataset.panY || "0") + dy;'
-                'vp.dataset.panX = String(px);'
-                'vp.dataset.panY = String(py);'
-                'vp.dataset.panLastX = String(e.clientX);'
-                'vp.dataset.panLastY = String(e.clientY);'
-                'h.applyViewportTransform(vp);'
-                '}'
+                "vp.dataset.panX = String(px);"
+                "vp.dataset.panY = String(py);"
+                "vp.dataset.panLastX = String(e.clientX);"
+                "vp.dataset.panLastY = String(e.clientY);"
+                "h.applyViewportTransform(vp);"
+                "}"
             ),
         )
         finish_js = (
-            '(e) => {'
-            'const vp = e.currentTarget;'
-            'const h = window.__oeAcherion;'
+            "(e) => {"
+            "const vp = e.currentTarget;"
+            "const h = window.__oeAcherion;"
             'const aid = vp.dataset.dragNodeId || "";'
-            'const clear = () => {'
+            "const clear = () => {"
             'vp.dataset.dragCandidateNodeId = "";'
             'vp.dataset.dragGroupToken = "";'
             'vp.dataset.dragStartClientX = "";'
             'vp.dataset.dragStartClientY = "";'
             'vp.dataset.dragOffsetX = "";'
             'vp.dataset.dragOffsetY = "";'
-            '};'
+            "};"
             'if (vp.dataset.rubberActive === "1" && h) {'
-            'const stage = h.stage(vp);'
-            'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
+            "const stage = h.stage(vp);"
+            "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
             'const x1=parseFloat(vp.dataset.rubberStartX||"0");'
             'const y1=parseFloat(vp.dataset.rubberStartY||"0");'
-            'const nodeIds=stage?h.nodesInRect(stage,x1,y1,pt.x,pt.y):[];'
-            'h.clearRubberBand(vp);'
+            "const nodeIds=stage?h.nodesInRect(stage,x1,y1,pt.x,pt.y):[];"
+            "h.clearRubberBand(vp);"
             'vp.dataset.rubberActive="";'
             'vp.dataset.suppressNextCanvasClick="1";'
             'vp.classList.remove("ach-shell-selecting");'
-            'clear();'
+            "clear();"
             'emit({rubber_node_ids:nodeIds,add:vp.dataset.rubberShift==="1"});'
-            'return;'
-            '}'
-            'if (aid && h) {'
-            'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
-            'const snapped = h.snapPoint('
-            'vp,'
+            "return;"
+            "}"
+            "if (aid && h) {"
+            "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
+            "const snapped = h.snapPoint("
+            "vp,"
             'pt.x - parseFloat(vp.dataset.dragOffsetX||"0"),'
             'pt.y - parseFloat(vp.dataset.dragOffsetY||"0")'
-            ');'
-            'const l = snapped.x;'
-            'const t = snapped.y;'
-            'const stage = h.stage(vp);'
+            ");"
+            "const l = snapped.x;"
+            "const t = snapped.y;"
+            "const stage = h.stage(vp);"
             'const grpData = JSON.parse(vp.dataset.dragGroupData||"[]");'
-            'if (stage) {'
-            'h.moveNode(stage, aid, l, t);'
-            'const nd = h.findNode(stage, aid);'
+            "if (stage) {"
+            "h.moveNode(stage, aid, l, t);"
+            "const nd = h.findNode(stage, aid);"
             'if (nd) nd.classList.remove("ach-node-dragging");'
-            'grpData.forEach(item => {'
-            'h.moveNode(stage,item.id,l+item.rx,t+item.ry);'
+            "grpData.forEach(item => {"
+            "h.moveNode(stage,item.id,l+item.rx,t+item.ry);"
             'const gnd=h.findNode(stage,item.id);if(gnd)gnd.classList.remove("ach-node-dragging");'
-            '});'
-            '}'
+            "});"
+            "}"
             'vp.dataset.dragNodeId = "";'
             'vp.classList.remove("ach-shell-dragging-node");'
             'vp.dataset.dragGroupData = "[]";'
-            'clear();'
-            'const gm = grpData.map(item => ({'
-            'node_id:item.id,'
-            'left:Math.round(l + item.rx),'
-            'top:Math.round(t + item.ry)'
-            '}));'
-            'emit({node_id:aid,left:Math.round(l),top:Math.round(t),group_moves:gm});'
-            'return;'
-            '}'
-            'clear();'
+            "clear();"
+            "const gm = grpData.map(item => ({"
+            "node_id:item.id,"
+            "left:Math.round(l + item.rx),"
+            "top:Math.round(t + item.ry)"
+            "}));"
+            "emit({node_id:aid,left:Math.round(l),top:Math.round(t),group_moves:gm});"
+            "return;"
+            "}"
+            "clear();"
             'vp.dataset.panActive = "0";'
             'vp.classList.remove("ach-shell-panning");'
-            '}'
+            "}"
         )
-        viewport.on('mouseup', self._finish_drag_node, js_handler=finish_js)
-        viewport.on('mouseleave', self._finish_drag_node, js_handler=finish_js)
+        viewport.on("mouseup", self._finish_drag_node, js_handler=finish_js)
+        viewport.on("mouseleave", self._finish_drag_node, js_handler=finish_js)
         viewport.on(
-            'wheel',
+            "wheel",
             lambda _e: None,
             js_handler=(
-                '(e) => {'
-                'const vp = e.currentTarget;'
-                'const h = window.__oeAcherion;'
+                "(e) => {"
+                "const vp = e.currentTarget;"
+                "const h = window.__oeAcherion;"
                 'if (e.target.closest(".ach-palette-shell")) return;'
-                'if (vp.dataset.dragNodeId || vp.dataset.dragCandidateNodeId) return;'
+                "if (vp.dataset.dragNodeId || vp.dataset.dragCandidateNodeId) return;"
                 'if (!h || !h.matchesShortcut(e, "zoom_canvas", "wheel")) return;'
-                'e.preventDefault();'
-                'h.ensureViewportState(vp);'
+                "e.preventDefault();"
+                "h.ensureViewportState(vp);"
                 'const stage = vp.querySelector(".ach-canvas");'
-                'if (!stage) return;'
-                'const rect = vp.getBoundingClientRect();'
+                "if (!stage) return;"
+                "const rect = vp.getBoundingClientRect();"
                 'const os = parseFloat(vp.dataset.scale || "1");'
-                'const zoom = e.deltaY < 0 ? 1.12 : 0.89;'
-                'const ns = Math.max(0.08, Math.min(4.0, os * zoom));'
+                "const zoom = e.deltaY < 0 ? 1.12 : 0.89;"
+                "const ns = Math.max(0.08, Math.min(4.0, os * zoom));"
                 'const px = parseFloat(vp.dataset.panX || "0");'
                 'const py = parseFloat(vp.dataset.panY || "0");'
-                'const wx = (e.clientX - rect.left - px) / os;'
-                'const wy = (e.clientY - rect.top - py) / os;'
-                'vp.dataset.scale = String(ns);'
-                'vp.dataset.panX = String((e.clientX - rect.left) - wx * ns);'
-                'vp.dataset.panY = String((e.clientY - rect.top) - wy * ns);'
-                'h.applyViewportTransform(vp);'
-                '}'
+                "const wx = (e.clientX - rect.left - px) / os;"
+                "const wy = (e.clientY - rect.top - py) / os;"
+                "vp.dataset.scale = String(ns);"
+                "vp.dataset.panX = String((e.clientX - rect.left) - wx * ns);"
+                "vp.dataset.panY = String((e.clientY - rect.top) - wy * ns);"
+                "h.applyViewportTransform(vp);"
+                "}"
             ),
         )
         viewport.on(
-            'dragover',
+            "dragover",
             lambda _e: None,
             js_handler=(
-                '(e) => {'
+                "(e) => {"
                 "if (!e.dataTransfer.types.includes('text/ach-kind') && !e.dataTransfer.types.includes('text/ach-node-spec')) return;"
-                'e.preventDefault();'
+                "e.preventDefault();"
                 "e.dataTransfer.dropEffect = 'copy';"
-                '}'
+                "}"
             ),
         )
         viewport.on(
-            'drop',
+            "drop",
             self._handle_canvas_drop,
             js_handler=(
-                '(e) => {'
+                "(e) => {"
                 "const spec = e.dataTransfer.getData('text/ach-node-spec');"
                 "const kind = e.dataTransfer.getData('text/ach-kind');"
-                'if (!spec && !kind) return;'
-                'e.preventDefault();'
-                'const vp = e.currentTarget;'
-                'const h = window.__oeAcherion;'
-                'if (!h) return;'
-                'const pt = h.worldPoint(vp, e.clientX, e.clientY);'
-                'const snapped = h.snapPoint(vp, pt.x, pt.y);'
-                'emit({kind: kind, spec: spec, x: Math.round(snapped.x), y: Math.round(snapped.y)});'
-                '}'
+                "if (!spec && !kind) return;"
+                "e.preventDefault();"
+                "const vp = e.currentTarget;"
+                "const h = window.__oeAcherion;"
+                "if (!h) return;"
+                "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
+                "const snapped = h.snapPoint(vp, pt.x, pt.y);"
+                "emit({kind: kind, spec: spec, x: Math.round(snapped.x), y: Math.round(snapped.y)});"
+                "}"
             ),
         )
 
     def _attach_canvas_events(self: Any, canvas: Any) -> None:
         canvas.on(
-            'click',
+            "click",
             self._handle_canvas_click,
             js_handler=(
-                '(e) => {'
+                "(e) => {"
                 'const vp = e.currentTarget.closest(".ach-shell");'
                 'if (vp && vp.dataset.suppressNextCanvasClick === "1") {'
                 'vp.dataset.suppressNextCanvasClick = "";'
-                'return;'
-                '}'
-                'if (e.ctrlKey || e.metaKey) return;'
+                "return;"
+                "}"
+                "if (e.ctrlKey || e.metaKey) return;"
                 'const hit = e.target.closest(".ach-link-hitbox");'
-                'if (hit) {'
-                'e.preventDefault(); e.stopPropagation();'
-                'e.currentTarget.focus();'
+                "if (hit) {"
+                "e.preventDefault(); e.stopPropagation();"
+                "e.currentTarget.focus();"
                 'emit({action:"select",'
                 'connection_id:hit.dataset.connectionId||""});'
-                'return;'
-                '}'
+                "return;"
+                "}"
                 'if (e.target.closest(".ach-node")) return;'
                 'emit({action:"clear"});'
-                '}'
+                "}"
             ),
         )
         canvas.on(
-            'contextmenu.prevent',
+            "contextmenu.prevent",
             self._handle_canvas_context,
             js_handler=(
-                '(e) => {'
+                "(e) => {"
                 'const hit = e.target.closest(".ach-link-hitbox");'
-                'if (!hit) return;'
-                'e.preventDefault(); e.stopPropagation();'
-                'e.currentTarget.focus();'
+                "if (!hit) return;"
+                "e.preventDefault(); e.stopPropagation();"
+                "e.currentTarget.focus();"
                 'emit({connection_id:hit.dataset.connectionId||""});'
-                '}'
+                "}"
             ),
         )
         canvas.on(
-            'keydown',
+            "keydown",
             self._handle_canvas_key,
             js_handler=(
-                '(e) => {'
-                'const h = window.__oeAcherion;'
-                'if (!h) return;'
+                "(e) => {"
+                "const h = window.__oeAcherion;"
+                "if (!h) return;"
                 'const tag = (e.target.tagName || "").toUpperCase();'
                 'if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"'
-                ' || e.target.isContentEditable) return;'
+                " || e.target.isContentEditable) return;"
                 'const vp = e.currentTarget.closest(".ach-shell");'
                 'let shortcutId = "";'
                 'if (h.matchesShortcut(e, "delete_selection_primary", "keyboard")) {'
@@ -867,23 +919,23 @@ class _DesignerInteractionsMixin:
                 'shortcutId = "redo_selection";'
                 '} else if (h.matchesShortcut(e, "clear_selection", "keyboard")) {'
                 'shortcutId = "clear_selection";'
-                '}'
-                'if (!shortcutId) return;'
-                'let anchorX = null;'
-                'let anchorY = null;'
+                "}"
+                "if (!shortcutId) return;"
+                "let anchorX = null;"
+                "let anchorY = null;"
                 'if (shortcutId === "paste_selection" && vp) {'
-                'h.ensureViewportState(vp);'
+                "h.ensureViewportState(vp);"
                 'const rawClientX = parseFloat(vp.dataset.cursorClientX || "");'
                 'const rawClientY = parseFloat(vp.dataset.cursorClientY || "");'
-                'if (Number.isFinite(rawClientX) && Number.isFinite(rawClientY)) {'
-                'const pt = h.worldPoint(vp, rawClientX, rawClientY);'
-                'const snapped = h.snapPoint(vp, pt.x, pt.y);'
-                'anchorX = Math.round(snapped.x);'
-                'anchorY = Math.round(snapped.y);'
-                '}'
-                '}'
-                'e.preventDefault(); e.stopPropagation();'
-                'emit({shortcut_id: shortcutId, key:e.key, anchor_x: anchorX, anchor_y: anchorY});'
-                '}'
+                "if (Number.isFinite(rawClientX) && Number.isFinite(rawClientY)) {"
+                "const pt = h.worldPoint(vp, rawClientX, rawClientY);"
+                "const snapped = h.snapPoint(vp, pt.x, pt.y);"
+                "anchorX = Math.round(snapped.x);"
+                "anchorY = Math.round(snapped.y);"
+                "}"
+                "}"
+                "e.preventDefault(); e.stopPropagation();"
+                "emit({shortcut_id: shortcutId, key:e.key, anchor_x: anchorX, anchor_y: anchorY});"
+                "}"
             ),
         )

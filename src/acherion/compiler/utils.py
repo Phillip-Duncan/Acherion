@@ -7,6 +7,8 @@ from collections.abc import Callable
 import re
 from typing import Any
 
+import acherion.graph_helpers as _graph_helpers
+
 
 _MISSING = object()
 _ConstantLiteralBuilder = Callable[[dict[str, Any]], str]
@@ -256,19 +258,4 @@ def _safe_function_name(text: str, fallback: str) -> str:
 
 def _add_missing_pass(lines: list[str]) -> list[str]:
     """Insert pass after any block header that has no indented body."""
-    result: list[str] = []
-    for i, line in enumerate(lines):
-        result.append(line)
-        if not line.rstrip().endswith(':') or not line.strip():
-            continue
-        j = i + 1
-        while j < len(lines) and not lines[j].strip():
-            j += 1
-        header_indent = len(line) - len(line.lstrip())
-        if j >= len(lines):
-            result.append(' ' * (header_indent + 4) + 'pass')
-        else:
-            next_indent = len(lines[j]) - len(lines[j].lstrip())
-            if next_indent <= header_indent:
-                result.append(' ' * (header_indent + 4) + 'pass')
-    return result
+    return _graph_helpers.add_missing_pass(lines)

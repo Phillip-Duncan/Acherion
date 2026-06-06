@@ -228,6 +228,59 @@ class _GraphOpsPinsMixin:
         return self._clone_pin_specs(static_specs.get(node.kind, []))
 
     @staticmethod
+    def _cache_pin_specs(
+        specs: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        return [dict(pin) for pin in specs]
+
+    def _pin_specs_from_cache(
+        self: Any,
+        node: AcherionNode,
+        *,
+        direction: str,
+    ) -> list[dict[str, str]] | None:
+        revision = getattr(self, '_graph_cache_revision', None)
+        if revision is None:
+            return None
+        cache_name = (
+            '_input_pin_specs_cache'
+            if direction == 'in'
+            else '_output_pin_specs_cache'
+        )
+        cache = getattr(self, cache_name, None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self, cache_name, cache)
+        cached = cache.get(node.node_id)
+        if cached is None:
+            return None
+        cached_revision, cached_specs = cached
+        if cached_revision != revision:
+            return None
+        return self._cache_pin_specs(cached_specs)
+
+    def _store_pin_specs_cache(
+        self: Any,
+        node: AcherionNode,
+        *,
+        direction: str,
+        specs: list[dict[str, str]],
+    ) -> None:
+        revision = getattr(self, '_graph_cache_revision', None)
+        if revision is None:
+            return
+        cache_name = (
+            '_input_pin_specs_cache'
+            if direction == 'in'
+            else '_output_pin_specs_cache'
+        )
+        cache = getattr(self, cache_name, None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self, cache_name, cache)
+        cache[node.node_id] = (revision, self._cache_pin_specs(specs))
+
+    @staticmethod
     def _entry_argument_pin_specs(
         entry: _catalog_models.FuncEntry | None,
         *,
@@ -495,43 +548,68 @@ class _GraphOpsPinsMixin:
         self: Any,
         node: AcherionNode,
     ) -> list[dict[str, str]]:
+        cached = self._pin_specs_from_cache(node, direction='in')
+        if cached is not None:
+            return cached
         definition = get_acherion_node_definition(node.kind)
         if definition is not None:
             definition_pins = definition.input_pins(self, node)
             if definition_pins is not None:
-                return cast(
+                final_definition_pins = cast(
                     list[dict[str, str]],
                     self._finalize_input_pins(node, definition_pins),
                 )
+                self._store_pin_specs_cache(
+                    node,
+                    direction='in',
+                    specs=final_definition_pins,
+                )
+                return final_definition_pins
         pins = self._pin_specs_from_registry(
             node,
             static_specs=_STATIC_INPUT_PIN_SPECS,
             dynamic_builders=_DYNAMIC_INPUT_PIN_BUILDERS,
         )
-        return cast(list[dict[str, str]], self._finalize_input_pins(node, pins))
+        final_pins = cast(
+            list[dict[str, str]],
+            self._finalize_input_pins(node, pins),
+        )
+        self._store_pin_specs_cache(node, direction='in', specs=final_pins)
+        return final_pins
 
     def _output_pin_specs(
         self: Any,
         node: AcherionNode,
     ) -> list[dict[str, str]]:
+        cached = self._pin_specs_from_cache(node, direction='out')
+        if cached is not None:
+            return cached
         definition = get_acherion_node_definition(node.kind)
         if definition is not None:
             definition_pins = definition.output_pins(self, node)
             if definition_pins is not None:
-                return self._with_preview_output_types(
+                final_definition_pins = self._with_preview_output_types(
                     node,
                     cast(
                         list[dict[str, str]],
                         self._finalize_output_pins(node, definition_pins),
                     ),
                 )
+                self._store_pin_specs_cache(
+                    node,
+                    direction='out',
+                    specs=final_definition_pins,
+                )
+                return final_definition_pins
         pins = self._pin_specs_from_registry(
             node,
             static_specs=_STATIC_OUTPUT_PIN_SPECS,
             dynamic_builders=_DYNAMIC_OUTPUT_PIN_BUILDERS,
         )
         final_pins = cast(list[dict[str, str]], self._finalize_output_pins(node, pins))
-        return self._with_preview_output_types(node, final_pins)
+        final_pins = self._with_preview_output_types(node, final_pins)
+        self._store_pin_specs_cache(node, direction='out', specs=final_pins)
+        return final_pins
 
     def _with_preview_output_types(
         self: Any,

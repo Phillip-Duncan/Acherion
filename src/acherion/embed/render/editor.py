@@ -579,6 +579,16 @@ class _RenderEditorMixin:
                     preview_value_summary(value)
                 ).classes('ach-node-preview-value')
 
+    def _run_preview_current(self: Any) -> bool:
+        """Run the host preview callback when one is configured."""
+        if self._on_run_preview is None:
+            self._notify_ui(
+                'Preview is not available for this Acherion instance.',
+                type='warning',
+            )
+            return False
+        return bool(self._on_run_preview())
+
     def _set_preview_literal_value(
         self: Any,
         scope: str,
@@ -798,6 +808,7 @@ class _RenderEditorMixin:
                                 draft_node,
                                 refresh_editor=_render_editor.refresh,
                             )
+                            self._render_node_preview_panel(draft_node)
 
                     _render_editor()
                 with ui.row().classes('justify-end gap-2 w-full pt-3 shrink-0'):

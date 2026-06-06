@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import acherion.graph_helpers as _graph_helpers
 from acherion.compiler.utils import (
     _safe_function_name,
 )
@@ -16,31 +17,18 @@ from acherion.registry import (
 def _iter_param_sources(node: AcherionNode) -> list[str]:
     """Return all source-id strings referenced in params."""
     params = dict(node.params)
-    out: list[str] = []
-    for source_id in list(params.get('arg_sources') or []):
-        if source_id:
-            out.append(str(source_id))
-    for source_id in dict(params.get('box_input_sources') or {}).values():
-        if source_id:
-            out.append(str(source_id))
-    for source_id in dict(params.get('named_sources') or {}).values():
-        if source_id:
-            out.append(str(source_id))
-
     definition = get_acherion_node_definition(node.kind)
-    if definition is None:
-        return out
-
-    for param_id in definition.source_param_ids(node):
-        source_id = str(params.get(param_id) or '').strip()
-        if source_id:
-            out.append(source_id)
-    return out
+    source_param_ids = (
+        list(definition.source_param_ids(node))
+        if definition is not None
+        else []
+    )
+    return _graph_helpers.iter_param_sources(params, source_param_ids)
 
 
 def _pure_source_id(source_id: str) -> str:
     """Return the node_id portion of a source reference."""
-    return source_id.split('@', 1)[0] if '@' in source_id else source_id
+    return _graph_helpers.pure_source_id(source_id)
 
 
 class _FunctionBoxGraphView:
@@ -51,6 +39,10 @@ class _FunctionBoxGraphView:
         self._node_index = {
             node.node_id: node for node in self._nodes
         }
+        self._boundary_records: list[
+            tuple[str, str, str, dict[str, Any], list[str]]
+        ] | None = None
+        self._boundary_cache: dict[str, tuple[list[str], list[str]]] = {}
 
     @property
     def nodes(self) -> list[AcherionNode]:
@@ -66,6 +58,46 @@ class _FunctionBoxGraphView:
     def pure_source_id(source_id: str) -> str:
         """Return the node id portion of a source reference."""
         return _pure_source_id(source_id)
+
+    def _native_boundary_records(
+        self,
+    ) -> list[tuple[str, str, str, dict[str, Any], list[str]]]:
+        if self._boundary_records is not None:
+            return self._boundary_records
+        records: list[tuple[str, str, str, dict[str, Any], list[str]]] = []
+        for node in self._nodes:
+            params = dict(node.params)
+            definition = get_acherion_node_definition(node.kind)
+            source_param_ids = (
+                list(definition.source_param_ids(node))
+                if definition is not None
+                else []
+            )
+            records.append((
+                node.node_id,
+                node.kind,
+                str(params.get('parent_function') or '').strip(),
+                params,
+                source_param_ids,
+            ))
+        self._boundary_records = records
+        return records
+
+    def _boundary_sources(
+        self,
+        box_node_id: str,
+    ) -> tuple[list[str], list[str]]:
+        if box_node_id not in self._boundary_cache:
+            input_sources, output_sources = _graph_helpers.function_box_boundary_sources(
+                self._native_boundary_records(),
+                box_node_id,
+            )
+            self._boundary_cache[box_node_id] = (
+                list(input_sources),
+                list(output_sources),
+            )
+        inputs, outputs = self._boundary_cache[box_node_id]
+        return list(inputs), list(outputs)
 
     def ordered_io_nodes(
         self,
@@ -94,52 +126,12 @@ class _FunctionBoxGraphView:
 
     def boundary_input_sources(self, box_node_id: str) -> list[str]:
         """Return sources that cross from outside into a function box."""
-        sources: list[str] = []
-        seen_sources: set[str] = set()
-        for node in self._nodes:
-            if node.kind in {'function_input', 'function_output'}:
-                continue
-            if not self._node_has_function_ancestor(node, box_node_id):
-                continue
-            for source_id in _iter_param_sources(node):
-                pure_source_id = _pure_source_id(source_id)
-                if not pure_source_id or source_id in seen_sources:
-                    continue
-                source_node = self._node_index.get(pure_source_id)
-                if source_node is None or source_node.node_id == box_node_id:
-                    continue
-                if self._node_has_function_ancestor(
-                    source_node,
-                    box_node_id,
-                ):
-                    continue
-                seen_sources.add(source_id)
-                sources.append(source_id)
+        sources, _outputs = self._boundary_sources(box_node_id)
         return sources
 
     def boundary_output_sources(self, box_node_id: str) -> list[str]:
         """Return sources that cross from inside a function box outward."""
-        sources: list[str] = []
-        seen_sources: set[str] = set()
-        for node in self._nodes:
-            if node.kind in {'function_input', 'function_output'}:
-                continue
-            if self._node_has_function_ancestor(node, box_node_id):
-                continue
-            for source_id in _iter_param_sources(node):
-                pure_source_id = _pure_source_id(source_id)
-                if not pure_source_id or source_id in seen_sources:
-                    continue
-                source_node = self._node_index.get(pure_source_id)
-                if source_node is None:
-                    continue
-                if not self._node_has_function_ancestor(
-                    source_node,
-                    box_node_id,
-                ):
-                    continue
-                seen_sources.add(source_id)
-                sources.append(source_id)
+        _inputs, sources = self._boundary_sources(box_node_id)
         return sources
 
     def external_inputs(self, box: AcherionNode) -> list[tuple[str, str]]:

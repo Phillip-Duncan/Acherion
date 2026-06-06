@@ -10,6 +10,7 @@ import re
 import uuid
 from typing import Any, cast
 
+import acherion.graph_helpers as _graph_helpers
 import acherion.node_behaviors as acherion_node_behaviors
 
 from acherion.constants import (
@@ -116,17 +117,12 @@ class _GraphOpsMixin:
     @staticmethod
     def _pure_node_id(source_id: str) -> str:
         """Strip '@pin_index' suffix from a source id."""
-        return source_id.split('@')[0] if source_id and '@' in source_id else (source_id or '')
+        return _graph_helpers.pure_source_id(source_id)
 
     @staticmethod
     def _source_pin_index(source_id: str) -> int:
         """Return the output pin index encoded in a source id (default 0)."""
-        if source_id and '@' in source_id:
-            try:
-                return int(source_id.split('@', 1)[1])
-            except ValueError:
-                return 0
-        return 0
+        return _graph_helpers.source_pin_index(source_id)
 
     def _manual_nodes(self: Any) -> list[AcherionNode]:
         return [
