@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from acherion.model import AcherionNode
-from acherion.registry import get_acherion_node_definition
+from acherion.registry import (
+    _template_has_exec_input,
+    _template_has_exec_output,
+    get_acherion_node_definition,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +99,30 @@ def compiler_is_serial_root(node: AcherionNode) -> bool:
     if override is not None:
         return override
     return is_ui_node_kind(node.kind)
+
+
+_EXEC_GATED_PRODUCER_KINDS = frozenset({
+    'call_function',
+    'call_method',
+    'custom_function',
+})
+
+
+def compiler_is_exec_gated_producer(node: AcherionNode) -> bool:
+    """Return True when one node must exec before its value can be read."""
+    definition = _definition_for_node(node)
+    override = _bool_override(definition, 'compiler_exec_gated_producer')
+    if override is not None:
+        return override
+    kind = str(node.kind or '').strip()
+    if kind not in _EXEC_GATED_PRODUCER_KINDS:
+        return False
+    if not bool(_definition_field(definition, 'producer', False)):
+        return False
+    return (
+        _template_has_exec_input(kind)
+        and _template_has_exec_output(kind)
+    )
 
 
 def compiler_can_reemit(node: AcherionNode) -> bool:
@@ -228,6 +256,15 @@ def preview_result_reference_for_node(
     return str(method(node) or '').strip()
 
 
+def edit_dialog_preview_enabled_for_node(node: AcherionNode) -> bool:
+    """Return True when one node should show preview controls in its editor."""
+    definition = _definition_for_node(node)
+    override = _bool_override(definition, 'edit_dialog_preview_enabled')
+    if override is not None:
+        return override
+    return True
+
+
 def node_type_summary(kind: str) -> str:
     """Return human-readable type summary provided by one definition."""
     return _string_override(_definition_for_kind(kind), 'type_summary')
@@ -253,8 +290,10 @@ __all__ = [
     'compiler_can_reemit',
     'compiler_has_zero_data_exec_output',
     'compiler_is_backward_getter',
+    'compiler_is_exec_gated_producer',
     'compiler_is_serial_root',
     'dependency_expr_for_node',
+    'edit_dialog_preview_enabled_for_node',
     'emit_static_node',
     'function_box_unsupported',
     'inline_default_editor_spec_for_node',

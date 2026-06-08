@@ -145,6 +145,9 @@ class _EmitScope:
         node = self._node_index.get(self._pure_source_id(source_id))
         if node is None:
             return
+        if acherion_node_behaviors.compiler_is_exec_gated_producer(node):
+            self._seed_unexecuted_producer_none(node, source_id)
+            return
         if not self._can_emit_as_dependency(node):
             self._seed_backward_getter_alias(
                 node,
@@ -482,6 +485,18 @@ class _EmitScope:
         if not acherion_node_behaviors.compiler_is_backward_getter(node):
             return ''
         return str(node.params.get('source') or '').strip()
+
+    def _seed_unexecuted_producer_none(
+        self,
+        node: AcherionNode,
+        source_id: str,
+    ) -> None:
+        """Bind unread exec-gated producer outputs to None, not fresh calls."""
+        if self._source_is_known(source_id):
+            return
+        pin_index = self._source_pin_index(source_id)
+        self._state.store(node.node_id, 'None', pin=pin_index)
+        self._state.store_source(source_id, 'None')
 
     def _seed_backward_getter_alias(
         self,

@@ -672,6 +672,10 @@ class _RenderEditorMixin:
 
     def _render_node_preview_panel(self: Any, node: AcherionNode) -> None:
         """Render transient preview controls and latest preview results."""
+        if not acherion_node_behaviors.edit_dialog_preview_enabled_for_node(
+            node,
+        ):
+            return
         binding = self._preview_binding_for_node(node)
         preview_value = self._node_preview_result_value(node)
         if binding is None and preview_value is None:
