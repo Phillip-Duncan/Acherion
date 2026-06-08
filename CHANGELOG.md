@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.9.0 (2026-06-08)
+
+### Features
+
+- **designer**: Add reroute nodes, draft wires, and grid-aligned pins
+  ([`6229db7`](https://github.com/Phillip-Duncan/Acherion/commit/6229db7231688236dc03e5cad532727a20b80887))
+
+
 ## v0.8.1 (2026-06-06)
 
 ### Performance Improvements
