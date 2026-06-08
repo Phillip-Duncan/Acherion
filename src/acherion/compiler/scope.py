@@ -343,6 +343,14 @@ class _EmitScope:
             if _catalog_types.is_list_like_type_tag(list_type):
                 return list_type
             return 'any'
+        if node.kind == 'reroute':
+            reroute_source_id = str(node.params.get('source') or '').strip()
+            source_node = self._node_index.get(
+                self._pure_source_id(reroute_source_id)
+            )
+            if source_node is None or source_node.node_id == node.node_id:
+                return 'any'
+            return self._source_output_type(source_node, reroute_source_id)
         return _catalog_types.node_kind_to_type(node.kind)
 
     def _resolve_instance_class_path(
@@ -752,6 +760,14 @@ class _EmitScope:
                             indent_level=indent_level,
                             emit_node=emit_node,
                         )
+                return
+            if node.kind == 'exec_reroute':
+                for successor in self._exec_successors(node, 0):
+                    self._emit_exec_node(
+                        successor,
+                        indent_level=indent_level,
+                        emit_node=emit_node,
+                    )
                 return
             self._ensure_dependencies(
                 node,

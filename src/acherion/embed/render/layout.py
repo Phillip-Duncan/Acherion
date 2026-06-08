@@ -44,6 +44,10 @@ from acherion.render.shared import (
 )
 
 
+_REROUTE_NODE_HEIGHT = 40
+_REROUTE_NODE_WIDTH = 80
+
+
 class _RenderLayoutMixin:
     """Canvas geometry and SVG link rendering methods."""
 
@@ -246,6 +250,8 @@ class _RenderLayoutMixin:
         if owner._is_function_box(node):
             width: int = int(owner._function_box_bounds(node)[2])
             return width
+        if node.kind in {'reroute', 'exec_reroute'}:
+            return _REROUTE_NODE_WIDTH
         return _NODE_WIDTH
 
     def _node_height(self, node: AcherionNode) -> int:
@@ -253,6 +259,8 @@ class _RenderLayoutMixin:
         if owner._is_function_box(node):
             height: int = int(owner._function_box_bounds(node)[3])
             return height
+        if node.kind in {'reroute', 'exec_reroute'}:
+            return _REROUTE_NODE_HEIGHT
         has_top_exec_row = (
             owner._top_exec_input_pin(node) is not None
             or owner._top_exec_output_pin(node) is not None
@@ -289,6 +297,8 @@ class _RenderLayoutMixin:
         )
         if self._is_function_box(node):
             style += f' height:{height}px;'
+        elif node.kind in {'reroute', 'exec_reroute'}:
+            style += f' height:{height}px;'
         return style
 
     def _node_tone_class(self: Any, node: AcherionNode) -> str:
@@ -316,6 +326,12 @@ class _RenderLayoutMixin:
                     _FUNCTION_BOX_PORT_CARD_HEIGHT // 2
                 )
                 return (left + (_PIN_EDGE_OFFSET * 2), y)
+        if node.kind in {'reroute', 'exec_reroute'}:
+            left, top, width, height = owner._node_bounds(node)
+            y = top + (height // 2)
+            if direction == 'in':
+                return (left + _PIN_EDGE_OFFSET, y)
+            return (left + width - _PIN_EDGE_OFFSET, y)
         left, top, width, _height = owner._node_bounds(node)
         top_exec_input = owner._top_exec_input_pin(node)
         top_exec_output = owner._top_exec_output_pin(node)
@@ -430,6 +446,8 @@ class _RenderLayoutMixin:
                 f'd="{path_d}" />'
             )
         ui.html(
-            '<svg class="ach-links">' + ''.join(paths) + '</svg>',
+            '<svg class="ach-links">'
+            + ''.join(paths)
+            + '</svg>',
             sanitize=False,
         )

@@ -14,14 +14,14 @@ _CANVAS_WORLD_HEIGHT = 6000
 
 # Node layout.
 _NODE_WIDTH = 360
-_NODE_TOP = 28
+_NODE_TOP = 20
 _NODE_STEP = 320
 
 # Column positions for each dock group.
-_SOURCE_X = 32
-_MANUAL_X = 470
+_SOURCE_X = 40
+_MANUAL_X = 460
 _MANUAL_Y = 120
-_SINK_RIGHT = 32
+_SINK_RIGHT = 40
 _SINK_X = _CANVAS_MIN_WIDTH - _NODE_WIDTH - _SINK_RIGHT
 
 # Node group colour palette (assigned in round-robin order, skip used ones).
@@ -38,14 +38,14 @@ _GROUP_COLOURS: tuple[str, ...] = (
 
 # Default drag offset used when the server triggers drag start.
 _DROP_X_OFFSET = 120
-_DROP_Y_OFFSET = 28
+_DROP_Y_OFFSET = 20
 
 # Shared visual and snap spacing for the free-move canvas grid.
 _GRID_SNAP_SIZE = 20
 
 # Pin geometry (used for static fallback SVG paths).
-_HEADER_HEIGHT = 67
-_BODY_TOP_PADDING = 10
-_PIN_ROW_HEIGHT = 34
-_PIN_CENTER_OFFSET = 17
-_PIN_EDGE_OFFSET = 22
+_HEADER_HEIGHT = 60
+_BODY_TOP_PADDING = 0
+_PIN_ROW_HEIGHT = 40
+_PIN_CENTER_OFFSET = 20
+_PIN_EDGE_OFFSET = 20

@@ -20,12 +20,17 @@ def _else_if_branch_condition_count(node: object) -> int:
     return max(_ELSE_IF_BRANCH_MIN_CONDITIONS, count)
 
 
-def _for_each_item_type(owner: object, node: object) -> str:
+def _connected_output_pin_type(
+    owner: object,
+    node: object,
+    param_key: str,
+) -> str:
+    """Return the output pin type referenced by one node param."""
     params = getattr(node, 'params', None)
     if not isinstance(params, dict):
         return 'any'
-    list_source_id = str(params.get('list') or '').strip()
-    if not list_source_id:
+    source_id = str(params.get(param_key) or '').strip()
+    if not source_id:
         return 'any'
     node_by_id = getattr(owner, '_node_by_id', None)
     pure_node_id = getattr(owner, '_pure_node_id', None)
@@ -41,17 +46,62 @@ def _for_each_item_type(owner: object, node: object) -> str:
         )
     ):
         return 'any'
-    source_node = node_by_id(pure_node_id(list_source_id))
+    source_node = node_by_id(pure_node_id(source_id))
     current_node_id = str(getattr(node, 'node_id', '') or '').strip()
     if source_node is None or source_node.node_id == current_node_id:
         return 'any'
-    pin_index = source_pin_index(list_source_id)
+    pin_index = source_pin_index(source_id)
     output_specs = output_pin_specs(source_node)
     if pin_index >= len(output_specs):
         return 'any'
-    list_type = str(output_specs[pin_index].get('type') or 'any')
+    return str(output_specs[pin_index].get('type') or 'any')
+
+
+def _for_each_item_type(owner: object, node: object) -> str:
+    list_type = _connected_output_pin_type(owner, node, 'list')
     item_type = acherion_catalog_types.list_item_type_tag(list_type)
     return item_type or 'any'
+
+
+def _reroute_source_type(owner: object, node: object) -> str:
+    """Return the type currently flowing through one data reroute node."""
+    return _connected_output_pin_type(owner, node, 'source')
+
+
+class RerouteNode(acherion_node.FlowNodeDefinition):
+    kind = 'reroute'
+    label = 'Reroute'
+    icon = 'radio_button_unchecked'
+    tooltip = 'Pass a value through a compact reroute knot.'
+    flavor = 'pure'
+    producer = True
+    default_params_factory = acherion_node.literal_params({'source': ''})
+
+    def input_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        pin_type = _reroute_source_type(owner, node)
+        return [acherion_node.pin('source', '', pin_type)]
+
+    def output_pins(
+        self,
+        owner: object,
+        node: object,
+    ) -> list[dict[str, str]] | None:
+        pin_type = _reroute_source_type(owner, node)
+        return [acherion_node.pin('value', '', pin_type)]
+
+
+class ExecRerouteNode(acherion_node.FlowNodeDefinition):
+    kind = 'exec_reroute'
+    label = 'Exec Reroute'
+    icon = 'radio_button_unchecked'
+    tooltip = 'Pass execution flow through a compact reroute knot.'
+    flavor = 'control'
+    exec_in = True
+    exec_out = True
 
 
 class ForEachNode(acherion_node.FlowNodeDefinition):
@@ -262,6 +312,8 @@ class SequencerNode(acherion_node.FlowNodeDefinition):
 
 
 BUILTIN_FLOW_NODES = (
+    RerouteNode(),
+    ExecRerouteNode(),
     ForEachNode(),
     CollectNode(),
     BranchValueNode(),

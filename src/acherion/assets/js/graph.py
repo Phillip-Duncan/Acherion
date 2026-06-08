@@ -212,6 +212,19 @@ GRAPH_JS = """
                     pendingPinIndex
                 );
                 if (activePin) activePin.classList.add('ach-pin-btn-active');
+                stage.dataset.pendingConnectionNodeId = pendingNodeId;
+                stage.dataset.pendingConnectionPinIndex = pendingPinIndex;
+                stage.dataset.pendingConnectionStyleTag = String(
+                    state?.pending_style_tag || 'any'
+                );
+                const viewport = stage.closest('.ach-shell');
+                const cursorX = parseFloat(viewport?.dataset.cursorClientX || '');
+                const cursorY = parseFloat(viewport?.dataset.cursorClientY || '');
+                if (Number.isFinite(cursorX) && Number.isFinite(cursorY)) {
+                    this.queueDraftConnectionUpdate(stage, cursorX, cursorY);
+                }
+            } else {
+                this.clearDraftConnection(stage);
             }
             const incompatibleInputs = Array.isArray(state?.incompatible_inputs)
                 ? state.incompatible_inputs
@@ -231,10 +244,11 @@ GRAPH_JS = """
         },
         ensureLinksSvg(stage) {
             if (!stage) return null;
-            let svg = stage.querySelector('.ach-links');
+            let svg = stage.querySelector('.ach-links[data-client-links="1"]');
             if (svg) return svg;
             svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.classList.add('ach-links');
+            svg.dataset.clientLinks = '1';
             stage.insertBefore(svg, stage.firstChild);
             return svg;
         },
@@ -252,6 +266,77 @@ GRAPH_JS = """
                 const targetPin = this.findPin(stage, tgt, 'in', inIdx);
                 if (sourcePin) sourcePin.classList.add('ach-pin-btn-filled');
                 if (targetPin) targetPin.classList.add('ach-pin-btn-filled');
+            });
+        },
+        clearDraftConnection(stage) {
+            if (!stage) return;
+            const draft = stage.querySelector('.ach-link-draft');
+            if (draft) draft.remove();
+            delete stage.dataset.pendingConnectionNodeId;
+            delete stage.dataset.pendingConnectionPinIndex;
+            delete stage.dataset.pendingConnectionStyleTag;
+        },
+        ensureDraftConnectionPath(stage, styleTag) {
+            const svg = this.ensureLinksSvg(stage);
+            if (!svg) return null;
+            let path = svg.querySelector('.ach-link-draft');
+            if (!path) {
+                path = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'path'
+                );
+                path.classList.add('ach-link-path', 'ach-link-draft');
+                svg.appendChild(path);
+            }
+            Array.from(path.classList).forEach(cls => {
+                if (cls.startsWith('ach-link-path-type-')) {
+                    path.classList.remove(cls);
+                }
+            });
+            path.classList.add(`ach-link-path-type-${styleTag || 'any'}`);
+            return path;
+        },
+        updateDraftConnection(stage, clientX, clientY) {
+            if (!stage) return;
+            const nodeId = String(stage.dataset.pendingConnectionNodeId || '');
+            const pinIndex = String(stage.dataset.pendingConnectionPinIndex || '');
+            if (!nodeId || !pinIndex) {
+                this.clearDraftConnection(stage);
+                return;
+            }
+            const sourcePin = this.pinCenter(stage, nodeId, 'out', pinIndex);
+            if (!sourcePin) {
+                this.clearDraftConnection(stage);
+                return;
+            }
+            const viewport = stage.closest('.ach-shell');
+            const sc = this.scale(viewport);
+            const stageRect = stage.getBoundingClientRect();
+            const targetX = (clientX - stageRect.left) / sc;
+            const targetY = (clientY - stageRect.top) / sc;
+            const path = this.ensureDraftConnectionPath(
+                stage,
+                stage.dataset.pendingConnectionStyleTag || 'any'
+            );
+            if (!path) return;
+            path.setAttribute(
+                'd',
+                this.curve(sourcePin.x, sourcePin.y, targetX, targetY)
+            );
+        },
+        queueDraftConnectionUpdate(stage, clientX, clientY) {
+            if (!stage) return;
+            stage.__oeAcherionDraftClientX = clientX;
+            stage.__oeAcherionDraftClientY = clientY;
+            if (stage.__oeAcherionDraftUpdateQueued) return;
+            stage.__oeAcherionDraftUpdateQueued = true;
+            requestAnimationFrame(() => {
+                stage.__oeAcherionDraftUpdateQueued = false;
+                this.updateDraftConnection(
+                    stage,
+                    stage.__oeAcherionDraftClientX || 0,
+                    stage.__oeAcherionDraftClientY || 0
+                );
             });
         },
         appendConnectionPath(svg, spec, hitbox) {

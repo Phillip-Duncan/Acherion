@@ -248,6 +248,60 @@ def test_exec_chain_accepts_canonical_pin_zero_exec_source_ids() -> None:
     assert test_helpers.run_has_assigned_attribute_read(source_code, 'layout')
 
 
+def test_exec_reroute_forwards_execution_to_successor() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='label',
+                kind='constant',
+                params={
+                    'value_type': 'text',
+                    'text_value': 'through',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='knot',
+                kind='exec_reroute',
+                params={
+                    'exec_sources': ['external_event:run'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['label'],
+                    'exec_sources': ['knot@0'],
+                },
+            ),
+        ],
+        user_functions={
+            'user.mark': {
+                'label': 'mark',
+                'signature': 'mark(value)',
+                'min_args': 1,
+                'max_args': 1,
+                'param_names': ['value'],
+                'param_types': ['str'],
+                'return_type': 'dict',
+                'source_code': (
+                    'def mark(value):\n'
+                    '    return {"branch": value}\n'
+                ),
+            },
+        },
+    )
+
+    source_code = acherion.compile_acherion_graph(graph)
+    local_values = acherion.execute_acherion_graph(source_code)
+
+    assert 'exec_reroute' not in source_code
+    assert any(value == {'branch': 'through'} for value in local_values.values())
+
+
 def test_exec_chain_continues_after_exec_only_call_method(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

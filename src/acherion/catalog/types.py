@@ -56,6 +56,8 @@ RETURN_TYPE_MAP: dict[str, str] = {
 COMPONENT_PYTHON_TYPES: dict[str, str] = {
     'external_event': 'event',
     'plot_figure': 'any',
+    'reroute': 'any',
+    'exec_reroute': 'exec',
     'constant': 'float | int | str | bool | dict',
     'call_function': 'any',
     'custom_function': 'any',

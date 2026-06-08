@@ -8,11 +8,38 @@ from typing import Any
 
 import acherion.graph_helpers as _graph_helpers
 from acherion.catalog import types as _catalog_types
-from acherion.model import AcherionNode
+from acherion.model import AcherionNode, _default_node
 
 
 class _GraphOpsConnectionsMixin:
     """Connection bookkeeping, source references, and wire actions."""
+
+    @staticmethod
+    def _connection_id(
+        target_node_id: str,
+        pin_id: str,
+        *,
+        source_id: str = "",
+    ) -> str:
+        if pin_id == "exec_source" and source_id:
+            return f"{target_node_id}@@{pin_id}@@{source_id}"
+        return f"{target_node_id}@@{pin_id}"
+
+    @staticmethod
+    def _split_connection_id(
+        connection_id: str,
+    ) -> tuple[str, str, str] | None:
+        """Decode one rendered connection id into target, pin, and source."""
+        if "@@" not in connection_id:
+            return None
+        parts = connection_id.split("@@")
+        if len(parts) == 2:
+            target_id, pin_id = parts
+            return (target_id, pin_id, "")
+        if len(parts) == 3:
+            target_id, pin_id, source_id = parts
+            return (target_id, pin_id, source_id)
+        return None
 
     @staticmethod
     def _normalize_exec_sources(value: object) -> list[str]:
@@ -528,6 +555,122 @@ class _GraphOpsConnectionsMixin:
 
     def _delete_selected_connection(self: Any) -> None:
         self._delete_connection(self._selected_connection_id)
+
+    def _build_reroute_node_for_source(
+        self: Any,
+        source_id: str,
+        *,
+        center_x: int,
+        center_y: int,
+    ) -> AcherionNode | None:
+        """Create a positioned reroute node connected to one source."""
+        source_id = str(source_id or "").strip()
+        if not source_id:
+            return None
+        source_node = self._node_by_id(self._pure_node_id(source_id))
+        if source_node is None:
+            return None
+        output_specs = self._output_pin_specs(source_node)
+        output_index = self._source_pin_index(source_id)
+        if output_index >= len(output_specs):
+            return None
+        source_type = str(output_specs[output_index].get("type") or "any")
+        reroute = _default_node(
+            "exec_reroute" if source_type == "exec" else "reroute"
+        )
+        left, top = self._resolve_centered_manual_position(
+            reroute,
+            center_x=int(center_x),
+            center_y=int(center_y),
+        )
+        left, top = self._snap_grid_point(left, top)
+        reroute.params["x"] = left
+        reroute.params["y"] = top
+        reroute.params["dock"] = "free"
+        reroute.params["manual_position"] = True
+        reroute.params["parent_function"] = self._containing_function_box_id(
+            center_x,
+            center_y,
+        )
+        if source_type == "exec":
+            self._set_exec_sources(reroute, [source_id])
+        else:
+            reroute.params["source"] = source_id
+        return reroute
+
+    def _insert_reroute_from_pending_source(
+        self: Any,
+        *,
+        center_x: int,
+        center_y: int,
+    ) -> None:
+        """Insert a reroute knot from the currently pending output pin."""
+        source_id = str(self._pending_source_node_id or "").strip()
+        reroute = self._build_reroute_node_for_source(
+            source_id,
+            center_x=center_x,
+            center_y=center_y,
+        )
+        if reroute is None:
+            return
+        self._selected_connection_id = None
+        manual_nodes = self._manual_nodes()
+        manual_nodes.append(reroute)
+        self._pending_source_node_id = self._full_output_source_id(reroute, 0)
+        self._rebuild_graph(manual_nodes)
+        self._notify_change()
+
+    def _insert_reroute_on_connection(
+        self: Any,
+        connection_id: str | None,
+        *,
+        center_x: int,
+        center_y: int,
+    ) -> None:
+        """Insert a compact reroute node by splitting an existing wire."""
+        data = self._split_connection_id(str(connection_id or ""))
+        if data is None:
+            return
+        target_node_id, pin_id, encoded_source_id = data
+        target_node = self._node_by_id(target_node_id)
+        if target_node is None:
+            return
+
+        source_id = (
+            encoded_source_id
+            if pin_id == "exec_source"
+            else self._input_source_id(target_node, pin_id)
+        )
+        source_id = str(source_id or "").strip()
+        if not source_id:
+            return
+        reroute = self._build_reroute_node_for_source(
+            source_id,
+            center_x=int(center_x),
+            center_y=int(center_y),
+        )
+        if reroute is None:
+            return
+        is_exec = reroute.kind == "exec_reroute"
+
+        reroute_source_id = self._full_output_source_id(reroute, 0)
+        if is_exec:
+            target_sources = [
+                reroute_source_id if current == source_id else current
+                for current in self._exec_source_ids(target_node)
+            ]
+            if reroute_source_id not in target_sources:
+                target_sources.append(reroute_source_id)
+            self._set_exec_sources(target_node, target_sources)
+        else:
+            self._set_input_source(target_node, pin_id, reroute_source_id)
+
+        self._pending_source_node_id = None
+        self._selected_connection_id = None
+        manual_nodes = self._manual_nodes()
+        manual_nodes.append(reroute)
+        self._rebuild_graph(manual_nodes)
+        self._notify_change()
 
     def _start_connection(self: Any, source_node_id: str) -> None:
         self._selected_connection_id = None

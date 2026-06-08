@@ -316,6 +316,7 @@ class _GraphOpsMixin:
                 center_x=center_x,
                 center_y=center_y,
             )
+            left, top = self._snap_grid_point(left, top)
             new_node.params['x'] = left
             new_node.params['y'] = top
             new_node.params['dock'] = 'free'

@@ -441,6 +441,7 @@ class _DesignerShellMixin:
             self._selected_connection_id = None
         if self._canvas_el is None:
             return
+        self._clear_client_connection_overlays()
         self._canvas_el.clear()
         self._canvas_el.style(
             f"height:{self._canvas_height()}px;"
@@ -470,6 +471,20 @@ class _DesignerShellMixin:
             self._ctx_container_el.clear()
             with self._ctx_container_el:
                 self._render_context_menu()
+
+    def _clear_client_connection_overlays(self: Any) -> None:
+        """Remove unmanaged SVG overlays before server-rendering the canvas."""
+        canvas_id = getattr(self, "_canvas_dom_id", "")
+        if not canvas_id:
+            return
+        self._run_client_javascript(
+            f"(function(){{"
+            f"const canvas=document.getElementById({canvas_id!r});"
+            f"if(!canvas)return;"
+            f'canvas.querySelectorAll(".ach-links[data-client-links=\\"1\\"]")'
+            f".forEach((svg)=>svg.remove());"
+            f"}})()"
+        )
 
     def _apply_mode_visibility(self: Any) -> None:
         graph_active = self._editor_mode == "graph"
@@ -563,11 +578,13 @@ class _DesignerShellMixin:
         pending_node_id = ""
         pending_pin_index: int | str = ""
         pending_type = "any"
+        pending_style_tag = "any"
         incompatible_inputs: list[dict[str, Any]] = []
         if pending_source_id:
             pending_node_id = self._pure_node_id(pending_source_id)
             pending_pin_index = self._source_pin_index(pending_source_id)
             pending_type = self._pending_output_type()
+            pending_style_tag = _catalog_types.pin_style_tag(pending_type)
             for node in self._graph.nodes:
                 for input_index, pin in enumerate(self._input_pin_specs(node)):
                     target_type = str(pin.get("type") or "any")
@@ -589,6 +606,7 @@ class _DesignerShellMixin:
             "pending_node_id": pending_node_id,
             "pending_pin_index": pending_pin_index,
             "pending_type": pending_type,
+            "pending_style_tag": pending_style_tag,
             "incompatible_inputs": incompatible_inputs,
         }
 
@@ -642,6 +660,8 @@ class _DesignerShellMixin:
         self._pending_inline_local_change = False
         if refresh_graph:
             self.refresh()
+            if sync_client:
+                self._sync_client_interaction_state()
         elif sync_client:
             self._sync_client_interaction_state()
         if graph_changed:

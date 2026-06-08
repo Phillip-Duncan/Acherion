@@ -8,6 +8,7 @@ import pytest
 
 import acherion
 import acherion.model as acherion_model
+import acherion.standalone_host as acherion_standalone_host
 
 import tests.helpers as test_helpers
 
@@ -92,3 +93,41 @@ def test_duplicate_titled_producer_nodes_compile_to_distinct_variables() -> None
     assert len(add_targets) == 2
     assert len(set(add_targets)) == 2
     assert any(value == [3, 30] for value in local_values.values())
+
+
+def test_data_reroute_compiles_as_identity_value() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='source',
+                kind='constant',
+                params={
+                    'value_type': 'int',
+                    'number_value': 7,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='knot',
+                kind='reroute',
+                params={
+                    'source': 'source@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='negated',
+                kind='op_unary',
+                params={
+                    'function': 'negate',
+                    'source': 'knot@0',
+                },
+            ),
+        ]
+    )
+
+    source_code = acherion.compile_acherion_graph(graph)
+    local_values = acherion.execute_acherion_graph(source_code)
+    preview = acherion_standalone_host.run_standalone_acherion_preview(graph)
+
+    assert preview.reference_values['knot'] == 7
+    assert preview.reference_values['knot@0'] == 7
+    assert any(value == -7 for value in local_values.values())

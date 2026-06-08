@@ -12,11 +12,43 @@ NODE_CSS = """
     cursor: grab;
 }
 .ach-node-dragging { cursor: grabbing; z-index: 3; }
+.ach-reroute-knot {
+    width: 80px;
+    height: 40px;
+    border-radius: 999px;
+    overflow: visible;
+    background: color-mix(in srgb, var(--oe-bg) 82%, var(--oe-text));
+    box-shadow: 0 8px 18px rgba(0,0,0,0.24);
+}
+.ach-reroute-knot .ach-pin-anchor {
+    position: relative;
+    z-index: 2;
+}
+.ach-reroute-knot-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0 !important;
+    column-gap: 0 !important;
+    row-gap: 0 !important;
+    width: 100%;
+    height: 100%;
+    padding: 0 12px;
+}
+.ach-reroute-knot-core {
+    flex: 1 1 auto;
+    height: 2px;
+    margin: 0 -1px;
+    background: var(--oe-border);
+}
 .ach-node-head {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 12px;
+    height: 59px;
+    box-sizing: border-box;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--oe-border);
     background: var(--ach-sidebar-panel-bg);
 }
@@ -29,8 +61,8 @@ NODE_CSS = """
 .ach-node-body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px 12px;
+    gap: 0;
+    padding: 0 10px 8px;
 }
 .ach-node-preview {
     display: flex;
@@ -56,8 +88,9 @@ NODE_CSS = """
     word-break: break-word;
 }
 .ach-exec-row {
-    min-height: 22px;
-    padding: 0 2px 2px;
+    min-height: 40px;
+    height: 40px;
+    padding: 0 2px;
 }
 .ach-exec-row-spacer {
     width: 14px;
@@ -68,7 +101,8 @@ NODE_CSS = """
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 34px;
+    min-height: 40px;
+    height: 40px;
     padding: 0 2px;
 }
 .ach-wire-label { font-size: 12px; color: var(--oe-text); }
@@ -113,6 +147,11 @@ NODE_CSS = """
 .ach-node-inline-field {
     flex: 0 0 auto;
     margin: 0;
+    padding-bottom: 0 !important;
+}
+.ach-node-inline-field.q-field {
+    min-height: 0 !important;
+    font-size: 15px;
 }
 .ach-node-inline-field-number {
     width: 112px;
@@ -148,10 +187,10 @@ NODE_CSS = """
 }
 .ach-node-inline-upload-trigger {
     flex: 0 0 auto;
-    min-width: 22px !important;
-    width: 22px !important;
-    height: 22px !important;
-    min-height: 22px !important;
+    min-width: 20px !important;
+    width: 20px !important;
+    height: 20px !important;
+    min-height: 20px !important;
     padding: 0 !important;
     border-radius: 6px !important;
     background: var(--oe-text) !important;
@@ -170,7 +209,9 @@ NODE_CSS = """
     display: none !important;
 }
 .ach-node-inline-field .q-field__control {
-    min-height: 22px !important;
+    min-height: 24px !important;
+    height: 24px !important;
+    padding: 2px 6px !important;
     background: var(--ach-sidebar-panel-bg-strong) !important;
     border-radius: 6px !important;
 }
@@ -179,12 +220,24 @@ NODE_CSS = """
     border-color: var(--oe-border) !important;
 }
 .ach-node-inline-field .q-field__native,
+.ach-node-inline-field .q-field__input,
 .ach-node-inline-field input {
-    padding: 0 5px !important;
-    min-height: 20px !important;
+    padding: 0 !important;
+    min-height: 15px !important;
+    height: 15px !important;
     font-size: 15px !important;
-    line-height: 20px !important;
+    line-height: 15px !important;
     color: var(--oe-text) !important;
+}
+.ach-node-inline-field-bool .q-checkbox {
+    min-height: 20px !important;
+    height: 20px !important;
+}
+.ach-node-inline-field-bool .q-checkbox__inner {
+    font-size: 20px !important;
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
 }
 .ach-node-inline-field-number .q-field__native,
 .ach-node-inline-field-number input {
@@ -314,7 +367,7 @@ NODE_CSS = """
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 58px;
+    min-height: 60px;
     padding: 14px 16px;
     border-bottom: 1px dashed rgba(29,155,240,0.24);
     background: rgba(29,155,240,0.10);
@@ -340,7 +393,7 @@ NODE_CSS = """
 }
 .ach-function-box-side {
     position: absolute;
-    top: 122px;
+    top: 120px;
     bottom: 24px;
     width: 148px;
     display: flex;

@@ -711,6 +711,10 @@ body:has(.q-menu.ach-menubar-menu) .ach-menubar {
     stroke-width: 4;
     filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ach-link-colour, var(--oe-blue)) 55%, white));
 }
+.ach-link-draft {
+    stroke-dasharray: 8 7;
+    opacity: 0.78;
+}
 .ach-link-hitbox {
     fill: none;
     stroke: transparent;

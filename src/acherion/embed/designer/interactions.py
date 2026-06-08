@@ -58,6 +58,11 @@ class _DesignerInteractionsMixin:
 
     _drag_node_id: str | None = None
     _ctx_menu_node_id: str | None = None
+    _ctx_menu_pending_connection: bool = False
+    _ctx_pending_connection_x: int = 0
+    _ctx_pending_connection_y: int = 0
+    _ctx_pending_connection_cx: int = 0
+    _ctx_pending_connection_cy: int = 0
     _selected_connection_id: str | None = None
 
     def _notify_interaction_state_change(
@@ -115,32 +120,6 @@ class _DesignerInteractionsMixin:
             if pin_idx < len(specs):
                 return f'{base} ({specs[pin_idx]["label"]})'
         return base
-
-    @staticmethod
-    def _connection_id(
-        target_node_id: str,
-        pin_id: str,
-        *,
-        source_id: str = "",
-    ) -> str:
-        if pin_id == "exec_source" and source_id:
-            return f"{target_node_id}@@{pin_id}@@{source_id}"
-        return f"{target_node_id}@@{pin_id}"
-
-    @staticmethod
-    def _split_connection_id(
-        connection_id: str,
-    ) -> tuple[str, str, str] | None:
-        if "@@" not in connection_id:
-            return None
-        parts = connection_id.split("@@")
-        if len(parts) == 2:
-            target_id, pin_id = parts
-            return (target_id, pin_id, "")
-        if len(parts) == 3:
-            target_id, pin_id, source_id = parts
-            return (target_id, pin_id, source_id)
-        return None
 
     def _start_drag_node(self: Any, node_id: str, event: Any = None) -> None:
         self._drag_node_id = node_id
@@ -262,6 +241,7 @@ class _DesignerInteractionsMixin:
         valid = {node.node_id for node in self._graph.nodes}
         if node_id not in valid:
             return
+        self._ctx_menu_pending_connection = False
         if node_id not in self._selected_node_ids:
             node = self._node_by_id(node_id)
             if node is None:
@@ -281,6 +261,7 @@ class _DesignerInteractionsMixin:
     def _ctx_dismiss(self: Any) -> None:
         """Dismiss context menu without changing selection."""
         self._ctx_menu_node_id = None
+        self._ctx_menu_pending_connection = False
         self._reset_context_menu_queries()
         if self._ctx_container_el is not None:
             self._ctx_container_el.clear()
@@ -471,6 +452,39 @@ class _DesignerInteractionsMixin:
         self._selected_node_ids.clear()
         self._delete_nodes_batch(to_delete)
 
+    def _open_pending_connection_context_menu(self: Any, event: Any) -> None:
+        """Show actions for the currently pending wire."""
+        if not self._pending_source_node_id:
+            return
+        args = _event_args_dict(event)
+        source_id = str(args.get("source_id") or "")
+        if source_id != self._pending_source_node_id:
+            return
+        raw_x = args.get("x")
+        raw_y = args.get("y")
+        raw_cx = args.get("cx")
+        raw_cy = args.get("cy")
+        if raw_x in (None, "") or raw_y in (None, ""):
+            return
+        self._ctx_menu_node_id = None
+        self._ctx_menu_pending_connection = True
+        self._ctx_pending_connection_x = int(raw_x)
+        self._ctx_pending_connection_y = int(raw_y)
+        self._ctx_pending_connection_cx = int(raw_cx or 0)
+        self._ctx_pending_connection_cy = int(raw_cy or 0)
+        if self._ctx_container_el is not None:
+            self._ctx_container_el.clear()
+            with self._ctx_container_el:
+                self._render_context_menu()
+        self._update_hint()
+
+    def _ctx_add_reroute_from_pending_connection(self: Any) -> None:
+        """Insert a reroute knot from the pending output-pin context menu."""
+        x = self._ctx_pending_connection_x
+        y = self._ctx_pending_connection_y
+        self._ctx_dismiss()
+        self._insert_reroute_from_pending_source(center_x=x, center_y=y)
+
     def _handle_viewport_mousemove(self: Any, event: Any) -> None:
         args = _event_args_dict(event)
         if str(args.get("action") or "") != "start":
@@ -487,13 +501,19 @@ class _DesignerInteractionsMixin:
             self._select_connection(str(args.get("connection_id") or ""))
             return
         if action == "clear":
-            ctx_was_open = self._ctx_menu_node_id is not None
+            ctx_was_open = (
+                self._ctx_menu_node_id is not None
+                or self._ctx_menu_pending_connection
+            )
             self._ctx_menu_node_id = None
+            self._ctx_menu_pending_connection = False
             changed = (
                 ctx_was_open
                 or self._selected_connection_id is not None
                 or bool(self._selected_node_ids)
+                or self._pending_source_node_id is not None
             )
+            self._pending_source_node_id = None
             self._selected_connection_id = None
             self._selected_node_ids.clear()
             if changed:
@@ -502,9 +522,28 @@ class _DesignerInteractionsMixin:
 
     def _handle_canvas_context(self: Any, event: Any) -> None:
         args = _event_args_dict(event)
+        action = str(args.get("action") or "")
+        if action == "pending_connection":
+            self._open_pending_connection_context_menu(event)
+            return
         connection_id = str(args.get("connection_id") or "")
         if connection_id:
             self._delete_connection(connection_id)
+
+    def _handle_canvas_double_click(self: Any, event: Any) -> None:
+        args = _event_args_dict(event)
+        connection_id = str(args.get("connection_id") or "")
+        if not connection_id:
+            return
+        raw_x = args.get("x")
+        raw_y = args.get("y")
+        if raw_x in (None, "") or raw_y in (None, ""):
+            return
+        self._insert_reroute_on_connection(
+            connection_id,
+            center_x=int(raw_x),
+            center_y=int(raw_y),
+        )
 
     def _handle_canvas_drop(self: Any, event: Any) -> None:
         args = _event_args_dict(event)
@@ -577,7 +616,10 @@ class _DesignerInteractionsMixin:
                 self._delete_selected_connection()
             return
         if shortcut_id == "clear_selection" or key == "Escape":
-            if self._selected_node_ids:
+            if self._pending_source_node_id is not None:
+                self._pending_source_node_id = None
+                self._notify_interaction_state_change()
+            elif self._selected_node_ids:
                 self._selected_node_ids.clear()
                 self._notify_interaction_state_change()
             elif self._selected_connection_id is not None:
@@ -715,6 +757,12 @@ class _DesignerInteractionsMixin:
                 "const pt=h.worldPoint(vp,e.clientX,e.clientY);"
                 'h.updateRubberBand(vp,parseFloat(vp.dataset.rubberStartX||"0"),parseFloat(vp.dataset.rubberStartY||"0"),pt.x,pt.y);'
                 "return;"
+                "}"
+                "if (h) {"
+                "const stage = h.stage(vp);"
+                'if (stage && (stage.dataset.pendingConnectionNodeId || "")) {'
+                "h.queueDraftConnectionUpdate(stage, e.clientX, e.clientY);"
+                "}"
                 "}"
                 'if (vp.dataset.panActive !== "1") return;'
                 'const stage = vp.querySelector(".ach-canvas");'
@@ -888,10 +936,45 @@ class _DesignerInteractionsMixin:
             js_handler=(
                 "(e) => {"
                 'const hit = e.target.closest(".ach-link-hitbox");'
-                "if (!hit) return;"
+                "if (hit) {"
                 "e.preventDefault(); e.stopPropagation();"
                 "e.currentTarget.focus();"
                 'emit({connection_id:hit.dataset.connectionId||""});'
+                "return;"
+                "}"
+                'if (e.target.closest(".ach-node")) return;'
+                "const stage = e.currentTarget;"
+                "const sourceId = stage.dataset.pendingConnectionNodeId || '';"
+                "const pinIndex = stage.dataset.pendingConnectionPinIndex || '';"
+                "if (!sourceId || !pinIndex) return;"
+                'const vp = stage.closest(".ach-shell");'
+                "const h = window.__oeAcherion;"
+                "if (!vp || !h) return;"
+                "e.preventDefault(); e.stopPropagation();"
+                "stage.focus();"
+                "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
+                'emit({action:"pending_connection",'
+                'source_id:`${sourceId}@${pinIndex}`,'
+                "x:Math.round(pt.x),y:Math.round(pt.y),"
+                "cx:e.clientX,cy:e.clientY});"
+                "}"
+            ),
+        )
+        canvas.on(
+            "dblclick",
+            self._handle_canvas_double_click,
+            js_handler=(
+                "(e) => {"
+                'const hit = e.target.closest(".ach-link-hitbox");'
+                "if (!hit) return;"
+                "e.preventDefault(); e.stopPropagation();"
+                'const vp = e.currentTarget.closest(".ach-shell");'
+                "const h = window.__oeAcherion;"
+                "if (!vp || !h) return;"
+                "e.currentTarget.focus();"
+                "const pt = h.worldPoint(vp, e.clientX, e.clientY);"
+                'emit({connection_id:hit.dataset.connectionId||"",'
+                "x:Math.round(pt.x),y:Math.round(pt.y)});"
                 "}"
             ),
         )

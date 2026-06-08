@@ -151,6 +151,82 @@ class _PatchConnectionOwner(
         self.ui_state_changes.append({"refresh_graph": refresh_graph})
 
 
+class _RerouteInsertOwner(
+    acherion_graphops_ops._GraphOpsMixin,
+    acherion_graphops_connections._GraphOpsConnectionsMixin,
+    acherion_graphops_pins._GraphOpsPinsMixin,
+    test_helpers._GraphOwnerBase,
+):
+    """Small owner for exercising wire-splitting reroute insertion."""
+
+    def __init__(self, graph: acherion_model.AcherionGraph) -> None:
+        test_helpers._GraphOwnerBase.__init__(self, graph)
+        self._host = None
+        self._pending_source_node_id = None
+        self._selected_connection_id = None
+        self._preview_reference_values = {}
+        self._graph_cache_revision = 1
+        self._connection_specs_cache_revision = -1
+        self._connection_specs_cache = None
+        self._outgoing_source_refs_cache = set()
+        self._input_pin_specs_cache = {}
+        self._output_pin_specs_cache = {}
+        self.change_count = 0
+
+    @staticmethod
+    def _connection_id(
+        target_node_id: str,
+        pin_id: str,
+        *,
+        source_id: str = "",
+    ) -> str:
+        if pin_id == "exec_source" and source_id:
+            return f"{target_node_id}@@{pin_id}@@{source_id}"
+        return f"{target_node_id}@@{pin_id}"
+
+    def _resolve_centered_manual_position(
+        self,
+        node: acherion_model.AcherionNode,
+        *,
+        center_x: int,
+        center_y: int,
+    ) -> tuple[int, int]:
+        del node
+        return (center_x - 37, center_y - 15)
+
+    def _containing_function_box_id(self, center_x: int, center_y: int) -> str:
+        del center_x, center_y
+        return ""
+
+    def _is_system_node(self, node: acherion_model.AcherionNode) -> bool:
+        del node
+        return False
+
+    def _is_system_source_node(self, node: acherion_model.AcherionNode) -> bool:
+        del node
+        return False
+
+    def _is_system_sink_node(self, node: acherion_model.AcherionNode) -> bool:
+        del node
+        return False
+
+    def _ensure_function_box_entries(self) -> None:
+        return
+
+    def _sync_function_box_ports(self) -> None:
+        return
+
+    @staticmethod
+    def _full_output_source_id(
+        node: acherion_model.AcherionNode,
+        pin_index: int,
+    ) -> str:
+        return f"{node.node_id}@{pin_index}"
+
+    def _notify_change(self) -> None:
+        self.change_count += 1
+
+
 def test_render_source_ids_always_use_indexed_form() -> None:
     owner = test_helpers.RenderPinsOwner()
 
@@ -314,6 +390,114 @@ def test_start_connection_uses_ui_state_sync_without_full_refresh() -> None:
     assert owner._pending_source_node_id == "source@0"
     assert owner.refresh_count == 0
     assert owner.ui_state_changes == [{"refresh_graph": False}]
+
+
+def test_insert_data_reroute_splits_existing_connection() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id="source",
+                kind="constant",
+                params={"value_type": "int", "number_value": 2},
+            ),
+            acherion_model.AcherionNode(
+                node_id="target",
+                kind="op_unary",
+                params={"operator": "negate", "source": "source@0"},
+            ),
+        ]
+    )
+    owner = _RerouteInsertOwner(graph)
+
+    owner._insert_reroute_on_connection(
+        "target@@source",
+        center_x=120,
+        center_y=80,
+    )
+
+    reroute = graph.nodes[-1]
+    assert reroute.kind == "reroute"
+    assert reroute.params["source"] == "source@0"
+    assert graph.nodes[1].params["source"] == f"{reroute.node_id}@0"
+    assert owner.change_count == 1
+
+
+def test_insert_exec_reroute_splits_existing_connection() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id="branch",
+                kind="branch_route",
+                params={"condition_source": ""},
+            ),
+            acherion_model.AcherionNode(
+                node_id="target",
+                kind="custom_function",
+                params={
+                    "function_path": "user.mark",
+                    "arg_sources": [],
+                    "exec_sources": ["branch@0"],
+                },
+            ),
+        ]
+    )
+    owner = _RerouteInsertOwner(graph)
+
+    owner._insert_reroute_on_connection(
+        "target@@exec_source@@branch@0",
+        center_x=160,
+        center_y=96,
+    )
+
+    reroute = graph.nodes[-1]
+    assert reroute.kind == "exec_reroute"
+    assert reroute.params["exec_sources"] == ["branch@0"]
+    assert graph.nodes[1].params["exec_sources"] == [f"{reroute.node_id}@0"]
+    assert owner.change_count == 1
+
+
+def test_insert_data_reroute_from_pending_source_keeps_connection_pending() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id="source",
+                kind="constant",
+                params={"value_type": "int", "number_value": 2},
+            ),
+        ]
+    )
+    owner = _RerouteInsertOwner(graph)
+    owner._pending_source_node_id = "source@0"
+
+    owner._insert_reroute_from_pending_source(center_x=120, center_y=80)
+
+    reroute = graph.nodes[-1]
+    assert reroute.kind == "reroute"
+    assert reroute.params["source"] == "source@0"
+    assert owner._pending_source_node_id == f"{reroute.node_id}@0"
+    assert owner.change_count == 1
+
+
+def test_insert_exec_reroute_from_pending_source_keeps_connection_pending() -> None:
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id="branch",
+                kind="branch_route",
+                params={"condition_source": ""},
+            ),
+        ]
+    )
+    owner = _RerouteInsertOwner(graph)
+    owner._pending_source_node_id = "branch@0"
+
+    owner._insert_reroute_from_pending_source(center_x=120, center_y=80)
+
+    reroute = graph.nodes[-1]
+    assert reroute.kind == "exec_reroute"
+    assert reroute.params["exec_sources"] == ["branch@0"]
+    assert owner._pending_source_node_id == f"{reroute.node_id}@0"
+    assert owner.change_count == 1
 
 
 def test_delete_node_clears_data_refs_to_removed_output_node() -> None:

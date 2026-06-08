@@ -129,6 +129,11 @@ class AcherionDesigner(  # pyright: ignore
         self._ctx_menu_node_id = None
         self._ctx_menu_cx: int = 0
         self._ctx_menu_cy: int = 0
+        self._ctx_menu_pending_connection = False
+        self._ctx_pending_connection_x: int = 0
+        self._ctx_pending_connection_y: int = 0
+        self._ctx_pending_connection_cx: int = 0
+        self._ctx_pending_connection_cy: int = 0
         self._ctx_container_el: Any = None
         self._overlay_host_el: Any = None
         self._ctx_menu_query: str = ''

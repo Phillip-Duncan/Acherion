@@ -316,6 +316,22 @@ def _emit_branch_value_node(
     return True
 
 
+def _emit_reroute_node(
+    *,
+    state: EmitState,
+    node: AcherionNode,
+    params: dict[str, Any],
+    indent: str,
+    var_name: str,
+    method_owner_name: str | None = 'self',
+) -> bool:
+    del method_owner_name
+    source_expr = _input_param_expr(params, 'source', state.node_vars)
+    state.lines.append(f'{indent}{var_name} = {source_expr}')
+    state.store(node.node_id, var_name)
+    return True
+
+
 def _emit_op_arithmetic_node(
     *,
     state: EmitState,
@@ -667,6 +683,7 @@ _COMPUTE_NODE_EMITTERS: dict[str, _EmitNodeHandler] = {
     'for_each': _emit_for_each_node,
     'collect': _emit_collect_node,
     'compare': _emit_compare_node,
+    'reroute': _emit_reroute_node,
     'branch_value': _emit_branch_value_node,
     'op_arithmetic': _emit_op_arithmetic_node,
     'op_unary': _emit_op_unary_node,

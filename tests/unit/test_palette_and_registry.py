@@ -68,6 +68,8 @@ def test_clear_selection_shortcut_clears_selected_nodes() -> None:
         def __init__(self) -> None:
             self._selected_node_ids = {'n1', 'n2'}
             self._selected_connection_id = None
+            self._pending_source_node_id = None
+            self._ctx_menu_pending_connection = False
             self.refresh_count = 0
             self.hint_updates = 0
 
@@ -510,6 +512,8 @@ def test_palette_taxonomy_groups_like_nodes_together() -> None:
         'dict_set',
     ]
     assert section_map['flow'] == [
+        'reroute',
+        'exec_reroute',
         'for_each',
         'collect',
         'branch_value',

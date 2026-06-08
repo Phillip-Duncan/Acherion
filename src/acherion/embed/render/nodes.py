@@ -118,6 +118,9 @@ class _RenderNodesMixin:
         if node.kind == 'sequencer':
             self._render_sequencer_node(node)
             return
+        if node.kind in {'reroute', 'exec_reroute'}:
+            self._render_reroute_node(node)
+            return
         self._render_body_pin_rows(node)
 
     def _render_node(
@@ -140,6 +143,10 @@ class _RenderNodesMixin:
         with ui.element('div').classes(
             f'ach-node {self._node_tone_class(node)}'
             + (' ach-function-box' if self._is_function_box(node) else '')
+            + (
+                ' ach-reroute-knot'
+                if node.kind in {'reroute', 'exec_reroute'} else ''
+            )
             + (' ach-node-selected' if node.node_id in self._selected_node_ids else '')
         ).style(self._node_style(node)).props(
             f'data-node-id={node.node_id} '
@@ -218,6 +225,9 @@ class _RenderNodesMixin:
             )
             if self._is_function_box(node):
                 self._render_function_box_node(node, graph_index)
+                return
+            if node.kind in {'reroute', 'exec_reroute'}:
+                self._render_reroute_node(node)
                 return
             with ui.element('div').classes('ach-node-head'):
                 ui.icon('drag_indicator').classes('ach-node-drag')
@@ -323,6 +333,43 @@ class _RenderNodesMixin:
 
     def _render_context_menu(self: Any) -> None:
         """Render floating right-click context menu."""
+        if self._ctx_menu_pending_connection:
+            owner = cast(Any, self)
+            cx = self._ctx_pending_connection_cx
+            cy = self._ctx_pending_connection_cy
+            menu_dom_id = f'{owner._frame_dom_id}-ctx-menu'
+
+            def _sync_pending_menu_layout() -> None:
+                owner._run_client_javascript(
+                    f'(function(){{'
+                    f'const menu=document.getElementById({menu_dom_id!r});'
+                    f'const h=window.__oeAcherion;'
+                    f'if(!menu||!h)return;'
+                    f'setTimeout(() => h.positionContextMenu(menu,{cx},{cy}),0);'
+                    f'setTimeout(() => h.positionContextMenu(menu,{cx},{cy}),80);'
+                    f'}})()'
+                )
+
+            ui.element('div').classes('ach-ctx-backdrop').on(
+                'click', lambda _: self._ctx_dismiss()
+            )
+            with ui.element('div').classes('ach-ctx-menu').props(
+                f'id={menu_dom_id}'
+            ).style(
+                f'left:{cx}px; top:{cy}px; min-width:220px;'
+            ):
+                ui.label('Pending Wire').classes('ach-ctx-section')
+                item = ui.element('div').classes('ach-ctx-item')
+                item.on(
+                    'click',
+                    lambda _: self._ctx_add_reroute_from_pending_connection(),
+                )
+                with item:
+                    ui.icon('radio_button_unchecked').style('font-size:18px;')
+                    ui.label('Add Reroute Node').classes('ach-ctx-item-label')
+            _sync_pending_menu_layout()
+            return
+
         if getattr(self, '_ctx_menu_node_id', None) is None:
             return
         selected: set[str] = set(self._selected_node_ids)

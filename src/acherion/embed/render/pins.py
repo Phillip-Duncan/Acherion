@@ -892,6 +892,69 @@ class _RenderPinsMixin:
                 lambda _e, sid=full_src_id: self._start_connection(sid),
             )
 
+    def _render_reroute_node(self: Any, node: AcherionNode) -> None:
+        """Render a compact pass-through reroute knot."""
+        input_specs = self._input_pin_specs(node)
+        output_specs = self._output_pin_specs(node)
+        if not input_specs or not output_specs:
+            return
+        input_pin = input_specs[0]
+        output_pin = output_specs[0]
+        input_pin_type = str(input_pin.get("type") or "any")
+        output_pin_type = str(output_pin.get("type") or input_pin_type)
+        pin_type = "exec" if input_pin_type == "exec" else output_pin_type
+        input_pin_id = str(input_pin.get("pin_id") or "")
+        source_id = self._input_source_id(node, input_pin_id)
+        is_incompatible = False
+        if self._pending_source_node_id is not None:
+            pending_type = self._pending_output_type()
+            if not _catalog_types.types_compatible(pending_type, pin_type):
+                is_incompatible = True
+
+        input_btn_cls = _pin_button_classes(
+            "ach-pin-btn ach-pin-btn-in",
+            pin_type,
+        )
+        if source_id:
+            input_btn_cls += " ach-pin-btn-filled"
+
+        full_src_id = self._full_output_source_id(node, 0)
+        output_btn_cls = _pin_button_classes(
+            "ach-pin-btn ach-pin-btn-out",
+            pin_type,
+        )
+        if self._has_outgoing_connection(full_src_id):
+            output_btn_cls += " ach-pin-btn-filled"
+        if self._pending_source_node_id == full_src_id:
+            output_btn_cls += " ach-pin-btn-active"
+
+        row_cls = "ach-reroute-knot-row"
+        if is_incompatible:
+            row_cls += " ach-pin-incompatible"
+
+        with ui.row().classes(row_cls):
+            ui.element("div").classes(f"{input_btn_cls} ach-pin-anchor").props(
+                f"data-node-id={node.node_id} "
+                "data-pin-direction=in "
+                "data-pin-index=0 "
+                f"data-pin-type={pin_type}"
+            ).on(
+                "click",
+                lambda _e, cur=node, pid=input_pin_id: (
+                    self._connect_input_pin(cur, pid)
+                ),
+            )
+            ui.element("div").classes("ach-reroute-knot-core")
+            ui.element("div").classes(f"{output_btn_cls} ach-pin-anchor").props(
+                f"data-node-id={node.node_id} "
+                "data-pin-direction=out "
+                "data-pin-index=0 "
+                f"data-pin-type={pin_type}"
+            ).on(
+                "click",
+                lambda _e, sid=full_src_id: self._start_connection(sid),
+            )
+
     def _render_body_pin_rows(
         self: Any,
         node: AcherionNode,
