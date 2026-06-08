@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.9.1 (2026-06-08)
+
+### Bug Fixes
+
+- **compiler**: Bind unread exec-gated callables to None on value wires
+  ([`59331bd`](https://github.com/Phillip-Duncan/Acherion/commit/59331bdf5f46e590f0ea6aac5640994cae9a3207))
+
+
 ## v0.9.0 (2026-06-08)
 
 ### Features
