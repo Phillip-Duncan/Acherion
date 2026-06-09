@@ -713,3 +713,244 @@ def test_exec_gated_custom_function_value_wire_yields_none_without_exec() -> Non
     true_branch, _else_branch = run_body.split('else:', 1)
     assert 'mark(None)' in true_branch
     assert 'cross_cal(' not in true_branch
+
+
+def test_branch_merged_sink_re_emits_value_dependencies_in_each_arm() -> None:
+    """Exec sinks fed from multiple arms must re-emit value deps per branch."""
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='left_true',
+                kind='constant',
+                params={
+                    'value_type': 'bool',
+                    'bool_value': True,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='right_false',
+                kind='constant',
+                params={
+                    'value_type': 'bool',
+                    'bool_value': False,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='compare',
+                kind='compare',
+                params={
+                    'left_source': 'left_true@0',
+                    'operator': '==',
+                    'right_source': 'right_false@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='branch',
+                kind='branch_route',
+                params={
+                    'exec_sources': ['external_event:run'],
+                    'condition_source': 'compare@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='ten',
+                kind='constant',
+                params={
+                    'value_type': 'number',
+                    'number_value': 10.0,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='twenty',
+                kind='constant',
+                params={
+                    'value_type': 'number',
+                    'number_value': 20.0,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='sum',
+                kind='op_arithmetic',
+                params={
+                    'operator': '+',
+                    'left_source': 'ten@0',
+                    'right_source': 'twenty@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_true',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['sum@0'],
+                    'exec_sources': ['branch@0'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='false_exec',
+                kind='exec_reroute',
+                params={
+                    'exec_sources': ['branch@1'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_false',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['sum@0'],
+                    'exec_sources': ['false_exec@0'],
+                },
+            ),
+        ],
+        user_functions={
+            'user.mark': {
+                'label': 'mark',
+                'signature': 'mark(value)',
+                'min_args': 1,
+                'max_args': 1,
+                'param_names': ['value'],
+                'param_types': ['any'],
+                'return_type': 'dict',
+                'source_code': (
+                    'def mark(value):\n'
+                    '    return {"value": value}\n'
+                ),
+            },
+        },
+    )
+
+    source_code = acherion.compile_acherion_graph(graph)
+    local_values = acherion.execute_acherion_graph(source_code)
+
+    assert any(value == {'value': 30} for value in local_values.values())
+    run_body = source_code.rsplit('def run(bindings=None):', 1)[-1]
+    _true_branch, else_branch = run_body.split('else:', 1)
+    assert 'mark(' in else_branch
+    assert '+' in else_branch
+    assert 'ten' in else_branch or 'constant' in else_branch.lower()
+
+
+def test_branch_value_skips_unreachable_arm_deps_in_branch_body() -> None:
+    """branch_value inside one arm must not emit unreachable arm deps."""
+    graph = acherion_model.AcherionGraph(
+        nodes=[
+            acherion_model.AcherionNode(
+                node_id='left_true',
+                kind='constant',
+                params={
+                    'value_type': 'bool',
+                    'bool_value': True,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='right_false',
+                kind='constant',
+                params={
+                    'value_type': 'bool',
+                    'bool_value': False,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='compare',
+                kind='compare',
+                params={
+                    'left_source': 'left_true@0',
+                    'operator': '==',
+                    'right_source': 'right_false@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='branch',
+                kind='branch_route',
+                params={
+                    'exec_sources': ['external_event:run'],
+                    'condition_source': 'compare@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='true_only',
+                kind='constant',
+                params={
+                    'value_type': 'number',
+                    'number_value': 11.0,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='false_only',
+                kind='constant',
+                params={
+                    'value_type': 'number',
+                    'number_value': 22.0,
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='select',
+                kind='branch_value',
+                params={
+                    'condition_source': 'compare@0',
+                    'true_source': 'true_only@0',
+                    'false_source': 'false_only@0',
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_true',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['select@0'],
+                    'exec_sources': ['branch@0'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='false_exec',
+                kind='exec_reroute',
+                params={
+                    'exec_sources': ['branch@1'],
+                },
+            ),
+            acherion_model.AcherionNode(
+                node_id='mark_false',
+                kind='custom_function',
+                params={
+                    'function_path': 'user.mark',
+                    'module': 'user',
+                    'arg_count': 1,
+                    'arg_sources': ['select@0'],
+                    'exec_sources': ['false_exec@0'],
+                },
+            ),
+        ],
+        user_functions={
+            'user.mark': {
+                'label': 'mark',
+                'signature': 'mark(value)',
+                'min_args': 1,
+                'max_args': 1,
+                'param_names': ['value'],
+                'param_types': ['any'],
+                'return_type': 'dict',
+                'source_code': (
+                    'def mark(value):\n'
+                    '    return {"value": value}\n'
+                ),
+            },
+        },
+    )
+
+    source_code = acherion.compile_acherion_graph(graph)
+    local_values = acherion.execute_acherion_graph(source_code)
+
+    assert any(value == {'value': 22} for value in local_values.values())
+    run_body = source_code.rsplit('def run(bindings=None):', 1)[-1]
+    _true_branch, else_branch = run_body.split('else:', 1)
+    else_body, _, _merged_tail = else_branch.partition('\n    node_5_constant')
+    assert 'false_only' in else_body or '22' in else_body
+    assert 'true_only' not in else_body
+    assert 'node_5_constant = 11.0' not in else_body

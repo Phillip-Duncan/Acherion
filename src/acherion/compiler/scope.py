@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Protocol
 
 import acherion.graph_helpers as _graph_helpers
@@ -74,7 +76,9 @@ class _EmitScope:
             node.node_id: node for node in self._scope_nodes
         }
         self._emitting_nodes: set[str] = set()
-        self._emitted_levels: dict[str, int] = {}
+        self._emitted_sites: dict[str, tuple[int, tuple[str, ...]]] = {}
+        self._binding_sites: dict[str, tuple[int, tuple[str, ...]]] = {}
+        self._branch_path: list[str] = []
         self._emitting_exec_nodes: set[str] = set()
         self._seeding_getter_nodes: set[str] = set()
         self._dependency_stack: list[str] = []
@@ -140,9 +144,23 @@ class _EmitScope:
         emit_node: _EmitNodeCallback,
     ) -> None:
         """Ensure code exists for one value source within this scope."""
-        if not source_id or self._source_is_known(source_id):
+        if not source_id:
             return
-        node = self._node_index.get(self._pure_source_id(source_id))
+        pure_source_id = self._pure_source_id(source_id)
+        if self._source_is_known(source_id):
+            source_expr = self._state.source_expr(source_id)
+            if (
+                not self._identifier_binding_unavailable(
+                    source_expr,
+                    indent_level=indent_level,
+                )
+                and self._value_available_at_site(
+                    pure_source_id,
+                    indent_level=indent_level,
+                )
+            ):
+                return
+        node = self._node_index.get(pure_source_id)
         if node is None:
             return
         if acherion_node_behaviors.compiler_is_exec_gated_producer(node):
@@ -245,6 +263,119 @@ class _EmitScope:
 
     def _indent(self, indent_level: int) -> str:
         return '    ' * indent_level
+
+    def _current_branch_path(self) -> tuple[str, ...]:
+        return tuple(self._branch_path)
+
+    @contextmanager
+    def _branch_arm(self, arm_id: str) -> Iterator[None]:
+        self._branch_path.append(str(arm_id or '').strip())
+        try:
+            yield
+        finally:
+            self._branch_path.pop()
+
+    def _value_available_at_site(
+        self,
+        node_id: str,
+        *,
+        indent_level: int,
+    ) -> bool:
+        """Return True when one emitted value is visible at this site."""
+        site = self._emitted_sites.get(node_id)
+        if site is None:
+            return True
+        emit_level, emit_path = site
+        current_path = self._current_branch_path()
+        if emit_level < indent_level:
+            return True
+        if emit_level == indent_level:
+            return emit_path == current_path
+        return False
+
+    def _identifier_binding_unavailable(
+        self,
+        expr: str,
+        *,
+        indent_level: int,
+    ) -> bool:
+        """Return True when one identifier binding is not visible here."""
+        name = str(expr or '').strip()
+        if not name.isidentifier():
+            return False
+        site = self._binding_sites.get(name)
+        if site is None:
+            return False
+        emit_level, emit_path = site
+        current_path = self._current_branch_path()
+        if emit_level < indent_level:
+            return False
+        if emit_level == indent_level:
+            return emit_path != current_path
+        return True
+
+    def _record_node_product(
+        self,
+        node: AcherionNode,
+        var_name: str,
+        *,
+        indent_level: int,
+    ) -> None:
+        """Track where one emitted node result becomes visible."""
+        self._emitted_sites[node.node_id] = (
+            indent_level,
+            self._current_branch_path(),
+        )
+        binding_name = str(var_name or '').strip()
+        if binding_name.isidentifier():
+            self._binding_sites[binding_name] = (
+                indent_level,
+                self._current_branch_path(),
+            )
+
+    def _producer_closure(self, source_id: str) -> set[str]:
+        """Return producer node ids reachable through value wires."""
+        pending = [str(source_id or '').strip()]
+        seen: set[str] = set()
+        producers: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if not current or current in seen:
+                continue
+            seen.add(current)
+            pure = self._pure_source_id(current)
+            node = self._node_index.get(pure)
+            if node is None:
+                continue
+            producers.add(pure)
+            pending.extend(self._data_source_ids(node))
+        return producers
+
+    def _skip_exec_sink_due_to_sibling_only_values(
+        self,
+        node: AcherionNode,
+        *,
+        indent_level: int,
+    ) -> bool:
+        """Return True when one UI exec sink only has sibling-arm value deps."""
+        if not acherion_node_behaviors.is_ui_node_kind(node.kind):
+            return False
+        source_ids = self._data_source_ids(node)
+        if not source_ids:
+            return False
+        current_path = self._current_branch_path()
+        has_local_dep = False
+        for source_id in source_ids:
+            for producer_id in self._producer_closure(source_id):
+                site = self._emitted_sites.get(producer_id)
+                if site is None:
+                    continue
+                if site == (indent_level, current_path):
+                    has_local_dep = True
+                    break
+            if has_local_dep:
+                break
+        return not has_local_dep
 
     def _is_exec_root(self, node: AcherionNode) -> bool:
         if not self._exec_output_pins(node):
@@ -537,6 +668,58 @@ class _EmitScope:
             self._dependency_stack.pop()
             self._seeding_getter_nodes.discard(node.node_id)
 
+    def _resolve_reroute_chain(self, source_id: str) -> str:
+        """Return the producer node id at the end of one reroute chain."""
+        pure = self._pure_source_id(str(source_id or '').strip())
+        seen: set[str] = set()
+        while pure in self._node_index and pure not in seen:
+            seen.add(pure)
+            node = self._node_index[pure]
+            if node.kind != 'reroute':
+                return pure
+            next_source = str(node.params.get('source') or '').strip()
+            if not next_source:
+                return pure
+            pure = self._pure_source_id(next_source)
+        return pure
+
+    def _branch_value_active_source_keys(
+        self,
+        node: AcherionNode,
+    ) -> list[str] | None:
+        """Return branch_value source keys active in the current branch arm."""
+        if node.kind != 'branch_value':
+            return None
+        path = self._current_branch_path()
+        if not path:
+            return None
+        cond_pure = self._resolve_reroute_chain(
+            str(node.params.get('condition_source') or '').strip(),
+        )
+        if not cond_pure:
+            return None
+        matching_arm = ''
+        for arm in reversed(path):
+            branch_id = arm.rsplit(':', 1)[0]
+            branch_node = self._node_index.get(branch_id)
+            if branch_node is None:
+                continue
+            if branch_node.kind not in {'branch_route', 'else_if_branch'}:
+                continue
+            branch_cond = self._resolve_reroute_chain(
+                str(branch_node.params.get('condition_source') or '').strip(),
+            )
+            if branch_cond == cond_pure:
+                matching_arm = arm
+                break
+        if not matching_arm:
+            return None
+        if matching_arm.endswith(':true'):
+            return ['true_source']
+        if matching_arm.endswith(':false'):
+            return ['false_source']
+        return None
+
     def _ensure_dependencies(
         self,
         node: AcherionNode,
@@ -544,6 +727,26 @@ class _EmitScope:
         indent_level: int,
         emit_node: _EmitNodeCallback,
     ) -> None:
+        selective_keys = self._branch_value_active_source_keys(node)
+        if selective_keys is not None:
+            for key in selective_keys:
+                source_id = str(node.params.get(key) or '').strip()
+                if source_id:
+                    self.ensure_source(
+                        source_id,
+                        indent_level=indent_level,
+                        emit_node=emit_node,
+                    )
+            cond_source = str(
+                node.params.get('condition_source') or ''
+            ).strip()
+            if cond_source:
+                self.ensure_source(
+                    cond_source,
+                    indent_level=indent_level,
+                    emit_node=emit_node,
+                )
+            return
         for source_id in self._data_source_ids(node):
             self.ensure_source(
                 source_id,
@@ -582,11 +785,15 @@ class _EmitScope:
             return
         if node.kind == 'sequencer':
             return
-        previous_level = self._emitted_levels.get(node.node_id)
-        if previous_level is not None:
-            if previous_level <= indent_level:
+        previous_site = self._emitted_sites.get(node.node_id)
+        if previous_site is not None:
+            prev_level, prev_path = previous_site
+            current_path = self._current_branch_path()
+            if prev_level < indent_level:
                 return
-            if not self._can_reemit(node):
+            if prev_level == indent_level and prev_path == current_path:
+                return
+            if prev_level > indent_level and not self._can_reemit(node):
                 return
         if node.node_id in self._emitting_nodes:
             self._raise_data_cycle(node.node_id)
@@ -604,7 +811,11 @@ class _EmitScope:
                 var_name=self._var_name(node),
                 indent=self._indent(indent_level),
             )
-            self._emitted_levels[node.node_id] = indent_level
+            self._record_node_product(
+                node,
+                self._var_name(node),
+                indent_level=indent_level,
+            )
         finally:
             self._dependency_stack.pop()
             self._emitting_nodes.discard(node.node_id)
@@ -632,18 +843,20 @@ class _EmitScope:
         false_target = next(iter(self._exec_successors(node, 1)), None)
         self._state.lines.append(f'{indent}if bool({cond_expr}):')
         if true_target is not None:
-            self._emit_exec_node(
-                true_target,
-                indent_level=indent_level + 1,
-                emit_node=emit_node,
-            )
+            with self._branch_arm(f'{node.node_id}:true'):
+                self._emit_exec_node(
+                    true_target,
+                    indent_level=indent_level + 1,
+                    emit_node=emit_node,
+                )
         if false_target is not None:
             self._state.lines.append(f'{indent}else:')
-            self._emit_exec_node(
-                false_target,
-                indent_level=indent_level + 1,
-                emit_node=emit_node,
-            )
+            with self._branch_arm(f'{node.node_id}:false'):
+                self._emit_exec_node(
+                    false_target,
+                    indent_level=indent_level + 1,
+                    emit_node=emit_node,
+                )
 
     def _emit_else_if_branch(
         self,
@@ -671,19 +884,26 @@ class _EmitScope:
             self._state.lines.append(f'{indent}{keyword} bool({cond_expr}):')
             target = next(iter(self._exec_successors(node, index)), None)
             if target is not None:
-                self._emit_exec_node(
-                    target,
-                    indent_level=indent_level + 1,
-                    emit_node=emit_node,
+                arm_id = (
+                    f'{node.node_id}:if'
+                    if index == 0
+                    else f'{node.node_id}:elif:{index}'
                 )
+                with self._branch_arm(arm_id):
+                    self._emit_exec_node(
+                        target,
+                        indent_level=indent_level + 1,
+                        emit_node=emit_node,
+                    )
         else_target = next(iter(self._exec_successors(node, condition_count)), None)
         if else_target is not None:
             self._state.lines.append(f'{indent}else:')
-            self._emit_exec_node(
-                else_target,
-                indent_level=indent_level + 1,
-                emit_node=emit_node,
-            )
+            with self._branch_arm(f'{node.node_id}:else'):
+                self._emit_exec_node(
+                    else_target,
+                    indent_level=indent_level + 1,
+                    emit_node=emit_node,
+                )
 
     def _emit_for_each(
         self,
@@ -784,6 +1004,11 @@ class _EmitScope:
                         emit_node=emit_node,
                     )
                 return
+            if self._skip_exec_sink_due_to_sibling_only_values(
+                node,
+                indent_level=indent_level,
+            ):
+                return
             self._ensure_dependencies(
                 node,
                 indent_level=indent_level,
@@ -794,6 +1019,11 @@ class _EmitScope:
                 params=dict(node.params),
                 var_name=self._var_name(node),
                 indent=self._indent(indent_level),
+            )
+            self._record_node_product(
+                node,
+                self._var_name(node),
+                indent_level=indent_level,
             )
             for pin_index, _pin_id in self._exec_output_pins(node):
                 for successor in self._exec_successors(node, pin_index):
