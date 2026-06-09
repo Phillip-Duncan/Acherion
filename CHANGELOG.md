@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.9.2 (2026-06-09)
+
+### Bug Fixes
+
+- **compiler**: Re-emit branch-local value deps for merged exec flows
+  ([`2d2891d`](https://github.com/Phillip-Duncan/Acherion/commit/2d2891d58e94baf604ed94bc854784302b78d7d1))
+
+
 ## v0.9.1 (2026-06-08)
 
 ### Bug Fixes
